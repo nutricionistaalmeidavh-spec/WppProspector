@@ -1,0 +1,348 @@
+import { describe, expect, it } from "vitest";
+import { BotDecision, type BotDecisionInput } from "./bot-decision.ts";
+import { Conversation } from "./conversation.ts";
+
+function decision(overrides: Partial<BotDecisionInput> = {}): BotDecision {
+  return BotDecision.create({
+    replyMessages: [],
+    endConversation: false,
+    leadIntent: "unknown",
+    leadQualification: null,
+    handoffToHuman: false,
+    reasoning: null,
+    ...overrides,
+  });
+}
+
+const t0 = new Date("2026-08-27T12:00:00.000Z");
+
+describe("Conversation", () => {
+  it("deduplica mensagens inbound pelo messageId", () => {
+    const conversation = Conversation.createNew("+5511999999999");
+
+    conversation.recordInboundTurn({ text: "oi", timestamp: t0, messageId: "wamid.1" });
+    conversation.recordInboundTurn({ text: "oi de novo", timestamp: t0, messageId: "wamid.1" });
+
+    expect(conversation.hasProcessed("wamid.1")).toBe(true);
+    expect(conversation.turns).toHaveLength(1);
+  });
+
+  it("aplica uma decisão com resposta: adiciona turnos outbound e atualiza o status do lead", () => {
+    const conversation = Conversation.createNew("+5511999999999");
+    conversation.recordInboundTurn({
+      text: "quero saber mais",
+      timestamp: t0,
+      messageId: "wamid.1",
+    });
+
+    conversation.applyDecision(
+      decision({
+        replyMessages: ["Claro!", "Temos plano mensal e anual."],
+        leadIntent: "interested",
+        leadQualification: "warm",
+      }),
+      t0,
+    );
+
+    const outbound = conversation.turns.filter((turn) => turn.direction === "outbound");
+    expect(outbound.map((turn) => turn.text)).toEqual(["Claro!", "Temos plano mensal e anual."]);
+    expect(conversation.leadIntent).toBe("interested");
+    expect(conversation.leadQualification).toBe("warm");
+    expect(conversation.pendingInboundTurns).toHaveLength(0);
+  });
+
+  it("aplica uma decisão sem resposta: nenhum turno outbound, mas o status é atualizado", () => {
+    const conversation = Conversation.createNew("+5511999999999");
+    conversation.recordInboundTurn({ text: "...", timestamp: t0, messageId: "wamid.1" });
+
+    conversation.applyDecision(decision({ replyMessages: [], leadIntent: "off_topic" }), t0);
+
+    expect(conversation.turns.filter((turn) => turn.direction === "outbound")).toHaveLength(0);
+    expect(conversation.leadIntent).toBe("off_topic");
+    expect(conversation.pendingInboundTurns).toHaveLength(0);
+  });
+
+  it("reabre automaticamente uma conversa encerrada no próximo inbound", () => {
+    const conversation = Conversation.createNew("+5511999999999");
+    conversation.recordInboundTurn({ text: "tchau", timestamp: t0, messageId: "wamid.1" });
+    conversation.applyDecision(
+      decision({ endConversation: true, replyMessages: ["Até mais!"] }),
+      t0,
+    );
+    expect(conversation.state).toBe("ended");
+
+    conversation.reopenIfEnded();
+
+    expect(conversation.state).toBe("active");
+  });
+
+  it("não reabre uma conversa que está aguardando atendimento humano", () => {
+    const conversation = Conversation.createNew("+5511999999999");
+    conversation.recordInboundTurn({
+      text: "quero falar com alguém",
+      timestamp: t0,
+      messageId: "wamid.1",
+    });
+    conversation.applyDecision(
+      decision({ handoffToHuman: true, replyMessages: ["Vou te transferir."] }),
+      t0,
+    );
+    expect(conversation.state).toBe("awaitingHuman");
+    expect(conversation.acceptsAutomatedReplies).toBe(false);
+
+    conversation.reopenIfEnded();
+
+    expect(conversation.state).toBe("awaitingHuman");
+  });
+
+  it("marca turnos inbound pendentes como abandonados", () => {
+    const conversation = Conversation.createNew("+5511999999999");
+    conversation.recordInboundTurn({ text: "a", timestamp: t0, messageId: "wamid.1" });
+    conversation.recordInboundTurn({ text: "b", timestamp: t0, messageId: "wamid.2" });
+
+    conversation.markPendingAbandoned();
+
+    expect(conversation.pendingInboundTurns).toHaveLength(0);
+    expect(conversation.turns.every((turn) => turn.abandoned)).toBe(true);
+  });
+
+  it("recentTurns corta pelo número de turnos mais recentes", () => {
+    const conversation = Conversation.createNew("+5511999999999");
+    for (let i = 0; i < 5; i++) {
+      conversation.recordInboundTurn({ text: `msg ${i}`, timestamp: t0, messageId: `wamid.${i}` });
+    }
+
+    const recent = conversation.recentTurns(2);
+
+    expect(recent.map((turn) => turn.text)).toEqual(["msg 3", "msg 4"]);
+    expect(conversation.recentTurns(0)).toEqual([]);
+  });
+
+  it("faz round-trip de serialização preservando estado e dedup", () => {
+    const conversation = Conversation.createNew("+5511999999999");
+    conversation.recordInboundTurn({ text: "oi", timestamp: t0, messageId: "wamid.1" });
+    conversation.applyDecision(decision({ replyMessages: ["Olá!"], leadIntent: "interested" }), t0);
+
+    const restored = Conversation.fromJSON(JSON.parse(JSON.stringify(conversation.toJSON())));
+
+    expect(restored.leadPhone).toBe("+5511999999999");
+    expect(restored.leadIntent).toBe("interested");
+    expect(restored.hasProcessed("wamid.1")).toBe(true);
+    expect(restored.turns).toHaveLength(2);
+  });
+
+  it("applyDecision grava módulos e plano no turno outbound e acumula no agregado", () => {
+    const conversation = Conversation.createNew("+5511999999999");
+
+    conversation.applyDecision(
+      decision({
+        replyMessages: ["O Gestão de Obras resolve isso."],
+        recommendedModules: ["gestao-obras"],
+        interestedModules: ["gestao-obras"],
+        quotedPlan: null,
+      }),
+      t0,
+    );
+    conversation.applyDecision(
+      decision({
+        replyMessages: ["O Essencial custa R$ 300/mês."],
+        recommendedModules: ["obra360"],
+        interestedModules: [],
+        quotedPlan: "essencial",
+      }),
+      t0,
+    );
+
+    const outbound = conversation.turns.filter((t) => t.direction === "outbound");
+    expect(outbound[0]!.recommendedModules).toEqual(["gestao-obras"]);
+    expect(outbound[0]!.quotedPlan).toBeNull();
+    expect(outbound[1]!.quotedPlan).toBe("essencial");
+
+    expect([...conversation.recommendedModules].sort()).toEqual(["gestao-obras", "obra360"]);
+    expect(conversation.interestedModules).toEqual(["gestao-obras"]);
+    expect(conversation.quotedPlan).toBe("essencial");
+  });
+
+  it("round-trip preserva os campos de módulos e plano citado", () => {
+    const conversation = Conversation.createNew("+5511999999999");
+    conversation.applyDecision(
+      decision({
+        replyMessages: ["ok"],
+        recommendedModules: ["dre-custos"],
+        interestedModules: ["dre-custos"],
+        quotedPlan: "personalizado",
+      }),
+      t0,
+    );
+
+    const restored = Conversation.fromJSON(JSON.parse(JSON.stringify(conversation.toJSON())));
+
+    expect(restored.recommendedModules).toEqual(["dre-custos"]);
+    expect(restored.interestedModules).toEqual(["dre-custos"]);
+    expect(restored.quotedPlan).toBe("personalizado");
+    const outbound = restored.turns.find((t) => t.direction === "outbound")!;
+    expect(outbound.recommendedModules).toEqual(["dre-custos"]);
+    expect(outbound.quotedPlan).toBe("personalizado");
+  });
+
+  describe("transições manuais iniciadas por um operador", () => {
+    it("handoffToHuman coloca uma conversa ativa em atendimento humano", () => {
+      const conversation = Conversation.createNew("+5511999999999");
+      expect(conversation.state).toBe("active");
+
+      conversation.handoffToHuman();
+
+      expect(conversation.state).toBe("awaitingHuman");
+      expect(conversation.acceptsAutomatedReplies).toBe(false);
+    });
+
+    it("handoffToHuman também vale a partir de `ended`", () => {
+      const conversation = Conversation.createNew("+5511999999999");
+      conversation.recordInboundTurn({ text: "tchau", timestamp: t0, messageId: "wamid.1" });
+      conversation.applyDecision(decision({ endConversation: true, replyMessages: ["Até!"] }), t0);
+      expect(conversation.state).toBe("ended");
+
+      conversation.handoffToHuman();
+
+      expect(conversation.state).toBe("awaitingHuman");
+    });
+
+    it("handoffToHuman é idempotente quando já está aguardando humano", () => {
+      const conversation = Conversation.createNew("+5511999999999");
+      conversation.handoffToHuman();
+      conversation.handoffToHuman();
+
+      expect(conversation.state).toBe("awaitingHuman");
+    });
+
+    it("resumeFromHuman devolve uma conversa em atendimento humano para `active`", () => {
+      const conversation = Conversation.createNew("+5511999999999");
+      conversation.handoffToHuman();
+
+      conversation.resumeFromHuman();
+
+      expect(conversation.state).toBe("active");
+      expect(conversation.acceptsAutomatedReplies).toBe(true);
+    });
+
+    it("resumeFromHuman reabre uma conversa encerrada", () => {
+      const conversation = Conversation.createNew("+5511999999999");
+      conversation.recordInboundTurn({ text: "tchau", timestamp: t0, messageId: "wamid.1" });
+      conversation.applyDecision(decision({ endConversation: true, replyMessages: ["Até!"] }), t0);
+      expect(conversation.state).toBe("ended");
+
+      conversation.resumeFromHuman();
+
+      expect(conversation.state).toBe("active");
+    });
+
+    it("resumeFromHuman é idempotente quando já está `active`", () => {
+      const conversation = Conversation.createNew("+5511999999999");
+      conversation.resumeFromHuman();
+
+      expect(conversation.state).toBe("active");
+    });
+
+    it("recordManualOutboundTurn adiciona um turno de origem `operator` sem mudar estado nem status do lead", () => {
+      const conversation = Conversation.createNew("+5511999999999");
+      conversation.recordInboundTurn({ text: "oi", timestamp: t0, messageId: "wamid.1" });
+      conversation.applyDecision(decision({ replyMessages: ["Olá!"], leadIntent: "interested" }), t0);
+
+      conversation.handoffToHuman();
+      conversation.recordManualOutboundTurn("Oi, aqui é o time comercial.", t0);
+
+      const outbound = conversation.turns.filter((turn) => turn.direction === "outbound");
+      expect(outbound.map((turn) => turn.origin)).toEqual(["bot", "operator"]);
+      expect(outbound.at(-1)!.text).toBe("Oi, aqui é o time comercial.");
+      expect(conversation.state).toBe("awaitingHuman");
+      expect(conversation.leadIntent).toBe("interested");
+    });
+
+    it("round-trip preserva a origem dos turnos outbound", () => {
+      const conversation = Conversation.createNew("+5511999999999");
+      conversation.applyDecision(decision({ replyMessages: ["Olá!"] }), t0);
+      conversation.recordManualOutboundTurn("mensagem manual", t0);
+
+      const restored = Conversation.fromJSON(JSON.parse(JSON.stringify(conversation.toJSON())));
+
+      const outbound = restored.turns.filter((turn) => turn.direction === "outbound");
+      expect(outbound.map((turn) => turn.origin)).toEqual(["bot", "operator"]);
+    });
+  });
+
+  describe("primeiro contato de prospecção (recordProspectingOutboundTurn)", () => {
+    it("em uma conversa nova adiciona um único turno de operador com kind `prospecting`, sem mudar estado nem status do lead", () => {
+      const conversation = Conversation.createNew("+5511999999999");
+
+      conversation.recordProspectingOutboundTurn("Olá! Aqui é a Obra na Mão.", t0);
+
+      expect(conversation.turns).toHaveLength(1);
+      const turn = conversation.turns[0]!;
+      expect(turn.direction).toBe("outbound");
+      expect(turn.origin).toBe("operator");
+      expect(turn.kind).toBe("prospecting");
+      expect(conversation.state).toBe("active");
+      expect(conversation.leadIntent).toBe("unknown");
+      expect(conversation.leadQualification).toBeNull();
+    });
+
+    it("em uma conversa existente apenas acrescenta o turno", () => {
+      const conversation = Conversation.createNew("+5511999999999");
+      conversation.recordInboundTurn({ text: "oi", timestamp: t0, messageId: "wamid.1" });
+      conversation.applyDecision(decision({ replyMessages: ["Olá!"] }), t0);
+
+      conversation.recordProspectingOutboundTurn("segundo contato via template", t0);
+
+      const kinds = conversation.turns
+        .filter((turn) => turn.direction === "outbound")
+        .map((turn) => turn.kind);
+      expect(kinds).toEqual([undefined, "prospecting"]);
+    });
+
+    it("round-trip preserva o kind `prospecting`", () => {
+      const conversation = Conversation.createNew("+5511999999999");
+      conversation.recordProspectingOutboundTurn("template olá", t0);
+
+      const restored = Conversation.fromJSON(JSON.parse(JSON.stringify(conversation.toJSON())));
+
+      expect(restored.turns[0]!.kind).toBe("prospecting");
+    });
+  });
+
+  it("carrega uma conversa salva antes desta mudança (sem os campos novos) sem erro", () => {
+    const legacy = {
+      leadPhone: "+5511999999999",
+      turns: [
+        {
+          direction: "inbound",
+          text: "oi",
+          timestamp: t0.toISOString(),
+          messageId: "wamid.1",
+          pendingDecision: false,
+        },
+        {
+          direction: "outbound",
+          text: "Olá! Como posso ajudar?",
+          timestamp: t0.toISOString(),
+          leadIntent: "interested",
+          leadQualification: "warm",
+          reasoning: null,
+        },
+      ],
+      leadIntent: "interested",
+      leadQualification: "warm",
+      state: "active",
+      processedMessageIds: ["wamid.1"],
+    };
+
+    const restored = Conversation.fromJSON(legacy as never);
+
+    expect(restored.recommendedModules).toEqual([]);
+    expect(restored.interestedModules).toEqual([]);
+    expect(restored.quotedPlan).toBeNull();
+    const outbound = restored.turns.find((t) => t.direction === "outbound")!;
+    expect(outbound.recommendedModules).toEqual([]);
+    expect(outbound.interestedModules).toEqual([]);
+    expect(outbound.quotedPlan).toBeNull();
+  });
+});

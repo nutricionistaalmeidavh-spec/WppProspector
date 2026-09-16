@@ -1,0 +1,28 @@
+{
+  "name": "wpp-prospector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "workspaces": [
+    "apps/server",
+    "apps/panel",
+    "packages/contracts"
+  ],
+  "scripts": {
+    "sync:contracts": "node scripts/sync-contracts.mjs",
+    "lint": "npm run lint -w wpp_prospector_bot_server && npm run lint -w wpp_prospector_bot_panel",
+    "typecheck": "npm run typecheck -w @wpp/contracts && npm run typecheck -w wpp_prospector_bot_server && npm run typecheck -w wpp_prospector_bot_panel",
+    "test": "npm run test:runtime && npm run test -w wpp_prospector_bot_server && npm run test -w wpp_prospector_bot_panel",
+    "build": "npm run build -w wpp_prospector_bot_server && npm run build -w wpp_prospector_bot_panel",
+    "check:contracts": "npm run sync:contracts && git diff --exit-code -- packages/contracts/src",
+    "check": "npm run check:contracts && npm run lint && npm run typecheck && npm test && npm run build",
+    "start": "node scripts/run.mjs start",
+    "dev": "node scripts/run.mjs dev",
+    "dev:panel": "node scripts/run.mjs panel",
+    "test:runtime": "node --test scripts/runtime.test.mjs",
+    "test:smoke": "node scripts/smoke-built.mjs"
+  }
+}

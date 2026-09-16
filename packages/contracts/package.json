@@ -1,0 +1,20 @@
+{
+  "name": "@wpp/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/management/interface/dto/index.ts",
+  "types": "./src/management/interface/dto/index.ts",
+  "exports": {
+    ".": "./src/management/interface/dto/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

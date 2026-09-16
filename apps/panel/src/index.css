@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 222 34% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 34% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 34% 13%;
+    --primary: 158 64% 32%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 18% 94%;
+    --secondary-foreground: 222 30% 18%;
+    --muted: 210 18% 94%;
+    --muted-foreground: 215 16% 43%;
+    --accent: 156 36% 93%;
+    --accent-foreground: 158 64% 24%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 20% 88%;
+    --input: 214 20% 88%;
+    --ring: 158 64% 32%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 220 24% 8%;
+    --foreground: 210 20% 96%;
+    --card: 220 22% 11%;
+    --card-foreground: 210 20% 96%;
+    --popover: 220 22% 11%;
+    --popover-foreground: 210 20% 96%;
+    --primary: 156 55% 45%;
+    --primary-foreground: 220 24% 8%;
+    --secondary: 218 18% 16%;
+    --secondary-foreground: 210 20% 96%;
+    --muted: 218 18% 16%;
+    --muted-foreground: 215 14% 67%;
+    --accent: 158 30% 16%;
+    --accent-foreground: 156 55% 72%;
+    --destructive: 0 62% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 218 16% 20%;
+    --input: 218 16% 20%;
+    --ring: 156 55% 45%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    background: hsl(var(--background));
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.18);
+  }
+}
+
+@layer utilities {
+  .surface-panel {
+    @apply rounded-xl border bg-card shadow-sm;
+  }
+
+  .surface-subtle {
+    @apply rounded-xl border bg-muted/35;
+  }
+
+  .app-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+}

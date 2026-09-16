@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite3
+*.db
+.wwebjs_auth/
+.wwebjs_cache/
+.tmp/
+.temp/
+.vscode/
+.idea/
