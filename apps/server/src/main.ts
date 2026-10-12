@@ -39,6 +39,9 @@ import { NoopMessagingCostRecorder } from "./whatsapp-connectivity/infrastructur
 import { SqliteMessagingCostRecorder } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-messaging-cost-recorder.ts";
 import { buildFastifyServer } from "./whatsapp-connectivity/infrastructure/http/fastify-server.ts";
 import { ConsoleLogger } from "./whatsapp-connectivity/infrastructure/logging/console-logger.ts";
+import { AutomationStore } from "./automation/automation-store.ts";
+import { FollowupScheduler } from "./automation/followup-scheduler.ts";
+import { OutboundTextMessage } from "./whatsapp-connectivity/domain/outbound-text-message.ts";
 
 const env = loadEnv();
 const conversationEnv = loadConversationEngineEnv();
@@ -104,6 +107,7 @@ try {
 const consentStore = new SqliteConsentStore(database);
 const outbox = new SqliteOutbox(database);
 const inboundJournal = new SqliteInboundJournal(database);
+const automationStore = new AutomationStore(database);
 const rawGateway = env.WHATSAPP_PROVIDER === "meta"
   ? new MetaCloudApiGateway({ accessToken: env.META_ACCESS_TOKEN!, phoneNumberId: env.META_PHONE_NUMBER_ID! })
   : new BaileysSessionManager(env.BAILEYS_AUTH_DIR, env.BAILEYS_SESSION_IDS);
@@ -166,6 +170,7 @@ const replySender = new ReplySenderAdapter({ sendTextMessage, logger });
 export { database };
 
 const generateReply = new GenerateReplyUseCase({
+  automation: automationStore,
   repository: conversationRepository,
   replyStrategy,
   llmClient,
@@ -195,7 +200,8 @@ const pendingInboundSweeper = new PendingInboundSweeper({
   maxAgeMs: conversationEnv.BOOT_SWEEP_MAX_AGE_MS,
 });
 
-const handleInboundMessage = new HandleInboundMessageUseCase(logger, inboundBatchCoordinator, consentStore);
+const handleInboundMessage = new HandleInboundMessageUseCase(logger, inboundBatchCoordinator, consentStore,
+  phone => { automationStore.cancelForReply(phone); });
 
 async function acknowledgeInbound(id: string): Promise<void> {
   await leadSerialQueue.whenSettled();
@@ -219,6 +225,9 @@ const handleMessageStatusUpdate = new HandleMessageStatusUpdateUseCase(
   messagingCostRecorder,
 );
 
+const followupScheduler = new FollowupScheduler(automationStore, consentStore,
+  async ({ to, body }) => rawGateway.sendTextMessage(OutboundTextMessage.create({ to, body })));
+
 export const app = buildFastifyServer({
   webhook: env.WHATSAPP_PROVIDER === "meta" ? {
     handleInboundMessage,
@@ -240,6 +249,8 @@ export const app = buildFastifyServer({
         queue: leadSerialQueue,
         audit: new SqliteAdminActionAudit(database, logger),
         consent: consentStore,
+        automation: automationStore,
+        followupsEnabled: env.WHATSAPP_PROVIDER === "baileys",
         prospectingEnabled: env.WHATSAPP_PROVIDER === "meta",
         diagnostics: () => rawGateway instanceof BaileysSessionManager ? rawGateway.diagnostic() : { provider: "meta", status: "configured", qrAvailable: false },
         logger,
@@ -277,11 +288,18 @@ if (isMainModule) {
       await acknowledgeInbound(message.id);
     }
     outbox.recoverStale();
+    automationStore.recoverStale();
     await gateway.retryPending();
+    await followupScheduler.runDue();
     const retryTimer = setInterval(() => {
       void gateway.retryPending().catch((e: unknown) => logger.error("Falha na outbox", { error: String(e) }));
     }, 30_000);
     retryTimer.unref?.();
+    const followupTimer = setInterval(() => {
+      void followupScheduler.runDue().catch((e: unknown) =>
+        logger.error("Falha ao processar follow-ups", { error: String(e) }));
+    }, 30_000);
+    followupTimer.unref?.();
   };
 
   boot()
