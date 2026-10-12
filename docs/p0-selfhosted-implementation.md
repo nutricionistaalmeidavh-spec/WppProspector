@@ -41,7 +41,7 @@ npm run build
 npm start
 ```
 
-O gateway local recebe texto em chats 1:1 e exibe QR no terminal. Não há suporte completo a mídia, grupos e LID nesta fase. A inclusão de Baileys no lockfile canônico deve ser feita antes da distribuição final do instalador; o comando acima é uma etapa temporária explícita, nunca um serviço pago.
+O gerenciador aceita até cinco sessões (`BAILEYS_SESSION_IDS=principal,secundaria`), cada uma em diretório de autenticação separado. Por segurança, mensagens de saída são enviadas somente pelo número principal; o mapeamento multioperador/multinúmero por conversa fica para a etapa de gestão. O gateway local recebe texto em chats 1:1 e exibe QR no terminal. Não há suporte completo a mídia, grupos e LID nesta fase. A inclusão de Baileys no lockfile canônico deve ser feita antes da distribuição final do instalador; o comando acima é uma etapa temporária explícita, nunca um serviço pago.
 
 ## Operações
 

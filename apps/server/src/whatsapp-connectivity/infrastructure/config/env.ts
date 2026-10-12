@@ -3,6 +3,7 @@ import { z } from "zod";
 const envSchema = z.object({
   WHATSAPP_PROVIDER: z.enum(["baileys", "meta"]).default("baileys"),
   BAILEYS_AUTH_DIR: z.string().min(1).default("./data/baileys-auth"),
+  BAILEYS_SESSION_IDS: z.string().min(1).default("default"),
   META_ACCESS_TOKEN: z.string().min(1).optional(),
   META_APP_SECRET: z.string().min(1).optional(),
   META_PHONE_NUMBER_ID: z.string().min(1).optional(),

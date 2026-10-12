@@ -29,7 +29,7 @@ import { SendOutboundMessageUseCase } from "./whatsapp-connectivity/application/
 import { SendTextMessageUseCase } from "./whatsapp-connectivity/application/use-cases/send-text-message.use-case.ts";
 import { loadEnv } from "./whatsapp-connectivity/infrastructure/config/env.ts";
 import { MetaCloudApiGateway } from "./whatsapp-connectivity/infrastructure/gateways/meta-cloud-api.gateway.ts";
-import { BaileysGateway } from "./whatsapp-connectivity/infrastructure/gateways/baileys.gateway.ts";
+import { BaileysSessionManager } from "./whatsapp-connectivity/infrastructure/gateways/baileys-session-manager.ts";
 import { DurableWhatsappGateway } from "./whatsapp-connectivity/infrastructure/gateways/durable-whatsapp.gateway.ts";
 import { SqliteConsentStore } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
 import { SqliteOutbox } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-outbox.ts";
@@ -106,9 +106,9 @@ const outbox = new SqliteOutbox(database);
 const inboundJournal = new SqliteInboundJournal(database);
 const rawGateway = env.WHATSAPP_PROVIDER === "meta"
   ? new MetaCloudApiGateway({ accessToken: env.META_ACCESS_TOKEN!, phoneNumberId: env.META_PHONE_NUMBER_ID! })
-  : new BaileysGateway(env.BAILEYS_AUTH_DIR);
+  : new BaileysSessionManager(env.BAILEYS_AUTH_DIR, env.BAILEYS_SESSION_IDS);
 const gateway = new DurableWhatsappGateway(rawGateway, outbox, consentStore,
-  () => !(rawGateway instanceof BaileysGateway) || rawGateway.diagnostic().status === "connected");
+  () => !(rawGateway instanceof BaileysSessionManager) || rawGateway.diagnostic().status === "connected");
 export const sendOutboundMessage = new SendOutboundMessageUseCase(gateway);
 export const sendTextMessage = new SendTextMessageUseCase(gateway);
 
@@ -241,7 +241,7 @@ export const app = buildFastifyServer({
         audit: new SqliteAdminActionAudit(database, logger),
         consent: consentStore,
         prospectingEnabled: env.WHATSAPP_PROVIDER === "meta",
-        diagnostics: () => rawGateway instanceof BaileysGateway ? rawGateway.diagnostic() : { provider: "meta", status: "configured", qrAvailable: false },
+        diagnostics: () => rawGateway instanceof BaileysSessionManager ? rawGateway.diagnostic() : { provider: "meta", status: "configured", qrAvailable: false },
         logger,
       }
     : undefined,
@@ -264,7 +264,7 @@ if (isMainModule) {
         error: error instanceof Error ? error.message : String(error),
       }),
     );
-    if (rawGateway instanceof BaileysGateway) await rawGateway.start({
+    if (rawGateway instanceof BaileysSessionManager) await rawGateway.start({
       execute(message) {
         inboundJournal.record(message);
         handleInboundMessage.execute(message);
