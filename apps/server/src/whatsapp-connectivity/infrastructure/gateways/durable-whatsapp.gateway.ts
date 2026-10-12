@@ -11,6 +11,7 @@ export class DurableWhatsappGateway implements WhatsAppGatewayPort {
     private readonly provider: WhatsAppGatewayPort,
     private readonly outbox: SqliteOutbox,
     private readonly consent: SqliteConsentStore,
+    private readonly canSend: () => boolean = () => true,
   ) {}
 
   async sendTextMessage(message: OutboundTextMessage): Promise<SentMessage> {
@@ -25,6 +26,7 @@ export class DurableWhatsappGateway implements WhatsAppGatewayPort {
   }
 
   async retryPending(): Promise<void> {
+    if (!this.canSend()) return;
     for (const job of this.outbox.pending()) {
       try { await this.deliver(job); }
       catch (err) { console.error("Job de saída falhou (será retomado se houver tentativas):", err instanceof Error ? err.message : "erro"); }
@@ -40,11 +42,11 @@ export class DurableWhatsappGateway implements WhatsAppGatewayPort {
   private async deliver(job: OutboxJob): Promise<SentMessage> {
     const phone = String(job.payload.to);
     if (job.kind === "template" && !this.consent.canProspect(phone)) {
-      this.outbox.fail(job.operationId, "Consentimento ausente/revogado.");
+      this.outbox.cancel(job.operationId, "Consentimento ausente/revogado.");
       throw new Error("Consentimento ausente/revogado.");
     }
     if (this.consent.isOptedOut(phone)) {
-      this.outbox.fail(job.operationId, "Contato descadastrado.");
+      this.outbox.cancel(job.operationId, "Contato descadastrado.");
       throw new Error("Contato descadastrado.");
     }
     if (!this.outbox.claim(job.operationId)) throw new Error("Job já está sendo processado.");

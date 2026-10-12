@@ -48,6 +48,11 @@ export class SqliteOutbox {
       .run(terminal ? "failed" : "pending", retryAt, String(error instanceof Error ? error.message : error).slice(0, 500), this.clock().toISOString(), operationId);
   }
 
+  cancel(operationId: string, reason: string): void {
+    this.db.prepare("UPDATE outbound_jobs SET state='failed',next_attempt_at=NULL,last_error=?,updated_at=? WHERE operation_id=?")
+      .run(reason.slice(0,500), this.clock().toISOString(), operationId);
+  }
+
   recoverStale(): OutboxJob[] {
     this.db.prepare("UPDATE outbound_jobs SET state='pending',next_attempt_at=NULL WHERE state='sending'").run();
     return this.pending();

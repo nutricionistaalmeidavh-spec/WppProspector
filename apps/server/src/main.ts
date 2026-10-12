@@ -104,7 +104,8 @@ const outbox = new SqliteOutbox(database);
 const rawGateway = env.WHATSAPP_PROVIDER === "meta"
   ? new MetaCloudApiGateway({ accessToken: env.META_ACCESS_TOKEN!, phoneNumberId: env.META_PHONE_NUMBER_ID! })
   : new BaileysGateway(env.BAILEYS_AUTH_DIR);
-const gateway = new DurableWhatsappGateway(rawGateway, outbox, consentStore);
+const gateway = new DurableWhatsappGateway(rawGateway, outbox, consentStore,
+  () => !(rawGateway instanceof BaileysGateway) || rawGateway.diagnostic().status === "connected");
 export const sendOutboundMessage = new SendOutboundMessageUseCase(gateway);
 export const sendTextMessage = new SendTextMessageUseCase(gateway);
 
@@ -223,6 +224,7 @@ export const app = buildFastifyServer({
         queue: leadSerialQueue,
         audit: new SqliteAdminActionAudit(database, logger),
         consent: consentStore,
+        prospectingEnabled: env.WHATSAPP_PROVIDER === "meta",
         diagnostics: () => rawGateway instanceof BaileysGateway ? rawGateway.diagnostic() : { provider: "meta", status: "configured", qrAvailable: false },
         logger,
       }

@@ -46,6 +46,7 @@ export interface AdminRoutesDeps {
   logger: Logger;
   consent?: SqliteConsentStore | undefined;
   diagnostics?: (() => { provider: string; status: string; qrAvailable: boolean }) | undefined;
+  prospectingEnabled?: boolean | undefined;
   clock?: () => Date;
 }
 
@@ -117,7 +118,7 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   });
   await app.register(registerAdminCapabilitiesRoutes, {
     conversationActions: true,
-    prospecting: true,
+    prospecting: deps.prospectingEnabled ?? true,
   });
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
   if (deps.consent) await app.register(registerConsentRoutes, { consent: deps.consent });

@@ -28,6 +28,27 @@ Meta Cloud API e Anthropic são conectores opcionais. Baileys usa uma integraç�
 - Fazer backup consistente do SQLite/WAL e dos JSONs de conversas; armazenar chaves de sessão separadas e criptografar o backup em repouso.
 - Para produção, limitar acesso ao painel com rede privada e TLS. O cookie de sessão sozinho não substitui autenticação forte.
 
+## Instalação do conector local
+
+O repositório não inclui a biblioteca Baileys no lockfile principal: ela só é carregada dinamicamente no modo local, para manter o pipeline histórico com `npm ci` intacto. Instale a dependência open-source no workspace do servidor:
+
+```sh
+npm ci
+cd apps/server
+npm install --no-save --package-lock=false --workspaces=false baileys@6.7.24 pino@9.14.0 qrcode-terminal@0.12.0
+cd ../..
+npm run build
+npm start
+```
+
+O gateway local recebe texto em chats 1:1 e exibe QR no terminal. Não há suporte completo a mídia, grupos e LID nesta fase. A inclusão de Baileys no lockfile canônico deve ser feita antes da distribuição final do instalador; o comando acima é uma etapa temporária explícita, nunca um serviço pago.
+
+## Operações
+
+As rotas `/admin/api/contacts/:phone/consent` (POST com `source`), `/admin/api/contacts/:phone/opt-out` (POST) e `/admin/api/connection` (GET) exigem sessão administrativa. O envio de templates exige autorização persistida; solicitações de parada recebidas são registradas na lista de supressão.
+
+Para backup manual seguro, encerre o servidor antes de copiar `apps/server/data/app.db` e `apps/server/data/conversations`. Credenciais Baileys em `data/baileys-auth` são secretas; criptografe backups em repouso e nunca as versione.
+
 ## Critérios de aceite
 
 1. `npm run check` e `npm run test:smoke` completos.

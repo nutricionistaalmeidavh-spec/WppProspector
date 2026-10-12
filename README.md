@@ -32,10 +32,18 @@ npm start
 
 O servidor disponibiliza o painel em `http://localhost:3000/admin/` (ou na porta `PORT` configurada). A chave da tela de login é o valor de `ADMIN_ACCESS_SECRET`; não é a chave da Meta nem da Anthropic.
 
-Configurações obrigatórias já usadas pelo servidor:
+Modos de operação (P0 self-hosted):
 
-- `META_ACCESS_TOKEN`, `META_APP_SECRET`, `META_PHONE_NUMBER_ID`, `META_WABA_ID`, `META_WEBHOOK_VERIFY_TOKEN`.
-- `ANTHROPIC_API_KEY` e, quando aplicável, `ANTHROPIC_WORKSPACE_ID`.
+- `WHATSAPP_PROVIDER=baileys` e `LLM_PROVIDER=rules` são os padrões, sem dependência comercial.
+- Após `npm ci`, instale o conector local open-source explicitamente com `cd apps/server && npm install --no-save --package-lock=false --workspaces=false baileys@6.7.24 pino@9.14.0 qrcode-terminal@0.12.0` e volte à raiz antes de `npm start`.
+- Para usar a API oficial, configure `WHATSAPP_PROVIDER=meta` e os segredos `META_*`; para Anthropic, configure `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` e o modelo desejado. Esses serviços podem gerar cobranças.
+- O modo local permite conversas iniciadas pelo contato; o endpoint de prospecção por template aprovado pertence à Meta. Campanhas exigem consentimento registrado e sem opt-out.
+- Consulte `docs/p0-selfhosted-implementation.md` para estado do P0, limitações e procedimentos de QA.
+
+Configurações do modo Meta/Anthropic **opcionais**:
+
+- `META_ACCESS_TOKEN`, `META_APP_SECRET`, `META_PHONE_NUMBER_ID`, `META_WABA_ID`, `META_WEBHOOK_VERIFY_TOKEN` (somente com `WHATSAPP_PROVIDER=meta`).
+- `ANTHROPIC_API_KEY` e, quando aplicável, `ANTHROPIC_WORKSPACE_ID` (somente com `LLM_PROVIDER=anthropic`).
 - `ADMIN_ACCESS_SECRET`, `ADMIN_SESSION_SECRET` e `PROSPECTING_TEMPLATE_NAME` (template aprovado na sua conta).
 - Se o `.env` antigo definir `ADMIN_WEB_DIST_DIR`, ajuste para `../panel/dist` ou remova a variável para usar esse padrão.
 

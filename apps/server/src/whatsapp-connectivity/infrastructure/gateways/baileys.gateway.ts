@@ -1,6 +1,5 @@
 import { mkdir, chmod } from "node:fs/promises";
 import { resolve } from "node:path";
-import { randomUUID } from "node:crypto";
 import type { WhatsAppGatewayPort, SentMessage } from "../../application/ports/whatsapp-gateway.port.ts";
 import type { OutboundMessage } from "../../domain/outbound-message.ts";
 import type { OutboundTextMessage } from "../../domain/outbound-text-message.ts";
@@ -70,8 +69,9 @@ export class BaileysGateway implements WhatsAppGatewayPort {
 
     const { state, saveCreds } = await lib.useMultiFileAuthState(this.authDir);
     const { version } = await lib.fetchLatestBaileysVersion();
-    const sock = lib.default({ auth: state, version, printQRInTerminal: false,
-      logger: { level: "silent", child: () => ({ level: "silent" }), trace() {}, debug() {}, info() {}, warn() {}, error() {} } });
+    const pinoPackage = "pino";
+    const pino = (await import(pinoPackage) as { default: (options: { level: string }) => unknown }).default;
+    const sock = lib.default({ auth: state, version, printQRInTerminal: false, logger: pino({ level: "silent" }) });
     this.sock = sock;
     sock.ev.on("creds.update", () => { void saveCreds().catch((e: unknown) => console.error("Não foi possível salvar credenciais da sessão", e)); });
     sock.ev.on("connection.update", (raw: unknown) => {
@@ -121,7 +121,8 @@ export class BaileysGateway implements WhatsAppGatewayPort {
     const found = (await this.sock.onWhatsApp(phone))?.[0];
     if (!found?.exists || !found.jid) throw new Error("Número não disponível no WhatsApp.");
     const response = await this.sock.sendMessage(found.jid, { text: message.body });
-    return { wamid: response?.key?.id ?? randomUUID() };
+    if (!response?.key?.id) throw new Error("WhatsApp não confirmou o identificador da mensagem.");
+    return { wamid: response.key.id };
   }
 
   async sendTemplateMessage(_message: OutboundMessage): Promise<SentMessage> {
