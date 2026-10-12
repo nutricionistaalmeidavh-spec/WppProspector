@@ -13,7 +13,11 @@ import { ImportDialog } from "@/features/leads/ImportDialog";
 import { getCrmRepository } from "@/features/crm/repository";
 import { useCrmRuntime } from "@/features/crm/runtime";
 import type { CampaignSummary } from "@/features/crm/types";
+import { CampaignCreateForm, CampaignManager } from "@/features/crm/CrmActions";
 
+export function campaignPercent(part:number,total:number):number {
+  return total>0?Math.round(part/total*100):0;
+}
 const statusLabel: Record<CampaignSummary["status"], string> = {
   draft: "Rascunho",
   running: "Em execução",
@@ -40,7 +44,8 @@ export function CampaignsRoute() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Prospecção" title="Campanhas" description="Acompanhe públicos, execução e resultado das ações de prospecção." />
+      <PageHeader eyebrow="Prospecção" title="Campanhas" description="Organize públicos e acompanhe leads; as campanhas não disparam mensagens automaticamente." />
+      {crm.supported && crm.source==="http"?<CampaignCreateForm/>:null}
       <FeatureAvailability feature="Campanhas CRM" supported={crm.supported}>
         {query.isLoading ? <Skeleton className="h-72" /> : (
           <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
@@ -88,8 +93,9 @@ export function CampaignDetailRoute() {
       ) : (
         <div className="space-y-6">
           <PageHeader eyebrow="Campanha" title={campaign.name} description={`${campaign.audience} leads · ${statusLabel[campaign.status]}`} actions={<StatusPill tone={campaign.status === "running" ? "success" : "warning"}>{statusLabel[campaign.status]}</StatusPill>} />
+          {crm.source==="http"?<CampaignManager campaign={campaign}/>:null}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <CampaignMetric label="Enviados" value={campaign.sent} helper={`${Math.round((campaign.sent / campaign.audience) * 100)}% do público`} />
+            <CampaignMetric label="Enviados" value={campaign.sent} helper={`${campaignPercent(campaign.sent,campaign.audience)}% do público`} />
             <CampaignMetric label="Respostas" value={campaign.replied} helper={`${Math.round((campaign.replied / Math.max(campaign.sent, 1)) * 100)}% dos enviados`} />
             <CampaignMetric label="Qualificados" value={campaign.qualified} helper={`${campaign.opportunities} oportunidades`} />
             <CampaignMetric label="Ganhos" value={campaign.won} helper={`${campaign.failed} falha(s)`} />

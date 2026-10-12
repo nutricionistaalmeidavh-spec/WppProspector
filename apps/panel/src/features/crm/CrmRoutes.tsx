@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getCrmRepository } from "./repository";
+import { CompanyEditor, OpportunityCreateForm, OpportunityEditor } from "./CrmActions";
+import { apiFetch } from "@/api/client";
 import { useCrmRuntime, type CrmModules } from "./runtime";
 import { OPPORTUNITY_STAGES, OPPORTUNITY_STAGE_LABEL, type Opportunity, type OpportunityStage } from "./types";
 
@@ -58,6 +60,7 @@ export function PipelineRoute() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="CRM" title="Pipeline" description="Acompanhe oportunidades por etapa do processo comercial." />
+      {crm.supported && crm.source==="http"?<OpportunityCreateForm/>:null}
       <FeatureAvailability feature="Pipeline" supported={crm.supported}>
         {query.isLoading ? <Skeleton className="h-96" /> : (
           <div className="app-scrollbar overflow-x-auto pb-2">
@@ -95,6 +98,7 @@ export function OpportunitiesRoute() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="CRM" title="Oportunidades" description="Acompanhe e encontre oportunidades comerciais." />
+      {crm.supported && crm.source==="http"?<OpportunityCreateForm/>:null}
       <FeatureAvailability feature="Oportunidades" supported={crm.supported}>
         <div className="surface-panel p-3 sm:p-4"><div className="relative max-w-md"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" placeholder="Buscar empresa, lead ou oportunidade" value={search} onChange={(event) => setSearch(event.target.value)} /></div></div>
         {query.isLoading ? <Skeleton className="h-72" /> : items.length === 0 ? <EmptyState title="Nenhuma oportunidade" description="A busca não encontrou oportunidades." /> : (
@@ -125,18 +129,20 @@ export function OpportunityDetailRoute() {
 }
 
 function OpportunityDetail({ opportunity }: { opportunity: Opportunity }) {
-  const timeline = [
-    { label: "Lead importado", detail: opportunity.source ?? "Origem comercial" },
-    { label: "Primeiro contato realizado", detail: opportunity.campaignName ?? "Prospecção" },
-    { label: "Oportunidade criada", detail: opportunity.title },
-    { label: "Etapa atual", detail: OPPORTUNITY_STAGE_LABEL[opportunity.stage] },
-  ];
+  const history = useQuery({
+    queryKey:["crm","history",opportunity.id],
+    queryFn:()=>apiFetch<{items:Array<{fromStage:string|null;toStage:string;occurredAt:string}>}>("/crm/opportunities/"+opportunity.id+"/history"),
+  });
+  const timeline=(history.data?.items??[]).map(event=>({
+    label: OPPORTUNITY_STAGE_LABEL[event.toStage as OpportunityStage] ?? event.toStage,
+    detail: new Date(event.occurredAt).toLocaleString("pt-BR"),
+  }));
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Oportunidade" title={opportunity.companyName} description={`${opportunity.title} · ${opportunity.leadName}`} actions={<StatusPill tone={stageTone(opportunity.stage)}>{OPPORTUNITY_STAGE_LABEL[opportunity.stage]}</StatusPill>} />
       <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
         <Card className="shadow-sm"><CardHeader><CardTitle className="text-base">Histórico comercial</CardTitle></CardHeader><CardContent><div className="relative space-y-5 before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-border">{timeline.map((event) => <div key={event.label} className="relative flex gap-4"><span className="relative z-10 mt-1.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 border-primary bg-background" /><div><p className="text-sm font-medium">{event.label}</p><p className="mt-0.5 text-sm text-muted-foreground">{event.detail}</p></div></div>)}</div></CardContent></Card>
-        <Card className="h-fit shadow-sm"><CardHeader><CardTitle className="text-base">Contexto</CardTitle></CardHeader><CardContent className="space-y-4 text-sm"><DetailRow icon={CircleDollarSign} label="Valor estimado" value={formatBrl(opportunity.estimatedValue)} /><DetailRow icon={UserRound} label="Responsável" value={opportunity.owner} /><DetailRow icon={CalendarClock} label="Próxima ação" value={opportunity.nextAction} /><DetailRow icon={Building2} label="Empresa" value={opportunity.companyName} />{opportunity.campaignName ? <DetailRow icon={ArrowRight} label="Campanha" value={opportunity.campaignName} /> : null}<div className="pt-2"><Link to={`/conversations/${encodeURIComponent(opportunity.leadPhone)}`} className="inline-flex w-full items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Abrir conversa</Link></div></CardContent></Card>
+        <div className="space-y-4"><OpportunityEditor opportunity={opportunity}/><Card className="h-fit shadow-sm"><CardHeader><CardTitle className="text-base">Contexto</CardTitle></CardHeader><CardContent className="space-y-4 text-sm"><DetailRow icon={CircleDollarSign} label="Valor estimado" value={formatBrl(opportunity.estimatedValue)} /><DetailRow icon={UserRound} label="Responsável" value={opportunity.owner} /><DetailRow icon={CalendarClock} label="Próxima ação" value={opportunity.nextAction} /><DetailRow icon={Building2} label="Empresa" value={opportunity.companyName} />{opportunity.campaignName ? <DetailRow icon={ArrowRight} label="Campanha" value={opportunity.campaignName} /> : null}<div className="pt-2"><Link to={`/conversations/${encodeURIComponent(opportunity.leadPhone)}`} className="inline-flex w-full items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Abrir conversa</Link></div></CardContent></Card></div>
       </div>
     </div>
   );
@@ -152,8 +158,9 @@ export function CompaniesRoute() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="CRM" title="Empresas" description="Contas relacionadas aos leads e às oportunidades." />
+      {crm.supported && crm.source==="http"?<CompanyEditor/>:null}
       <FeatureAvailability feature="Empresas" supported={crm.supported}>
-        {query.isLoading ? <Skeleton className="h-72" /> : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{(query.data ?? []).map((company) => <Card key={company.id} className="shadow-sm"><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{company.name}</p><p className="mt-1 text-sm text-muted-foreground">{company.segment} · {company.city}</p></div><Building2 className="h-5 w-5 text-muted-foreground" /></div><div className="mt-5 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-lg bg-muted/50 p-2"><p className="font-semibold">{company.leadCount}</p><p className="text-muted-foreground">leads</p></div><div className="rounded-lg bg-muted/50 p-2"><p className="font-semibold">{company.opportunityCount}</p><p className="text-muted-foreground">opps</p></div><div className="rounded-lg bg-muted/50 p-2"><p className="font-semibold">{formatBrl(company.pipelineValue)}</p><p className="text-muted-foreground">pipeline</p></div></div></CardContent></Card>)}</div>}
+        {query.isLoading ? <Skeleton className="h-72" /> : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{(query.data ?? []).map((company) => <Card key={company.id} className="shadow-sm"><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{company.name}</p><p className="mt-1 text-sm text-muted-foreground">{company.segment} · {company.city}</p></div><Building2 className="h-5 w-5 text-muted-foreground" /></div><div className="mt-5 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-lg bg-muted/50 p-2"><p className="font-semibold">{company.leadCount}</p><p className="text-muted-foreground">leads</p></div><div className="rounded-lg bg-muted/50 p-2"><p className="font-semibold">{company.opportunityCount}</p><p className="text-muted-foreground">opps</p></div><div className="rounded-lg bg-muted/50 p-2"><p className="font-semibold">{formatBrl(company.pipelineValue)}</p><p className="text-muted-foreground">pipeline</p></div></div><div className="mt-3"><CompanyEditor company={company}/></div></CardContent></Card>)}</div>}
       </FeatureAvailability>
     </div>
   );

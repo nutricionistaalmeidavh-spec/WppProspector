@@ -7,9 +7,18 @@ import { StatusPill } from "@/components/StatusPill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getCrmRepository } from "@/features/crm/repository";
+import { apiFetch } from "@/api/client";
 import { useCrmRuntime } from "@/features/crm/runtime";
 import { OPPORTUNITY_STAGES, OPPORTUNITY_STAGE_LABEL } from "@/features/crm/types";
 
+interface ConversionMetrics {
+  total:number;qualified:number;proposal:number;won:number;wonValue:number;
+  stages:Record<string,number>;
+}
+function useConversionMetrics(enabled:boolean) {
+  return useQuery({queryKey:["crm","analytics","conversions"],
+    queryFn:()=>apiFetch<ConversionMetrics>("/crm/analytics/conversions"),enabled});
+}
 function useAnalyticsCrm() {
   const runtime = useCrmRuntime();
   const repository = useMemo(
@@ -20,15 +29,10 @@ function useAnalyticsCrm() {
 }
 
 export function FunnelRoute() {
-  const { runtime, repository } = useAnalyticsCrm();
+  const { runtime } = useAnalyticsCrm();
   const supported = runtime.source !== "disabled" && runtime.modules.opportunities;
-  const query = useQuery({
-    queryKey: ["crm", runtime.source, "analytics", "opportunities"],
-    queryFn: () => repository.listOpportunities(),
-    enabled: supported,
-    staleTime: Infinity,
-  });
-  const total = query.data?.length ?? 0;
+  const query = useConversionMetrics(supported);
+  const total = query.data?.total ?? 0;
 
   return (
     <div className="space-y-6">
@@ -38,7 +42,7 @@ export function FunnelRoute() {
           <div className="surface-panel p-5">
             <div className="space-y-3">
               {OPPORTUNITY_STAGES.filter((stage) => stage !== "lost").map((stage) => {
-                const count = (query.data ?? []).filter((item) => item.stage === stage).length;
+                const count = query.data?.stages[stage] ?? 0;
                 const width = total > 0 ? Math.max(8, (count / total) * 100) : 0;
                 return (
                   <div key={stage} className="grid gap-2 sm:grid-cols-[170px_1fr_42px] sm:items-center">
@@ -57,18 +61,13 @@ export function FunnelRoute() {
 }
 
 export function ConversionsRoute() {
-  const { runtime, repository } = useAnalyticsCrm();
+  const { runtime } = useAnalyticsCrm();
   const supported = runtime.source !== "disabled" && runtime.modules.opportunities;
-  const query = useQuery({
-    queryKey: ["crm", runtime.source, "analytics", "opportunities"],
-    queryFn: () => repository.listOpportunities(),
-    enabled: supported,
-    staleTime: Infinity,
-  });
-  const items = query.data ?? [];
-  const won = items.filter((item) => item.stage === "won").length;
-  const qualified = items.filter((item) => ["qualified", "meeting", "proposal", "negotiation", "won"].includes(item.stage)).length;
-  const proposal = items.filter((item) => ["proposal", "negotiation", "won"].includes(item.stage)).length;
+  const query = useConversionMetrics(supported);
+  const total = query.data?.total ?? 0;
+  const won = query.data?.won ?? 0;
+  const qualified = query.data?.qualified ?? 0;
+  const proposal = query.data?.proposal ?? 0;
 
   return (
     <div className="space-y-6">
@@ -76,10 +75,11 @@ export function ConversionsRoute() {
       <FeatureAvailability feature="Analytics de conversão" supported={supported}>
         {query.isLoading ? <Skeleton className="h-64" /> : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <ConversionCard icon={TrendingUp} label="Oportunidades" value={items.length} helper="base atual" />
-            <ConversionCard icon={BarChart3} label="Qualificadas+" value={qualified} helper={percent(qualified, items.length)} />
-            <ConversionCard icon={CircleDollarSign} label="Proposta+" value={proposal} helper={percent(proposal, items.length)} />
-            <ConversionCard icon={TrendingUp} label="Ganhos" value={won} helper={percent(won, items.length)} />
+            <ConversionCard icon={TrendingUp} label="Oportunidades" value={total} helper="base persistida" />
+            <ConversionCard icon={BarChart3} label="Qualificadas+" value={qualified} helper={percent(qualified, total)} />
+            <ConversionCard icon={CircleDollarSign} label="Proposta+" value={proposal} helper={percent(proposal, total)} />
+            <ConversionCard icon={TrendingUp} label="Ganhos" value={won} helper={percent(won, total)} />
+            <p className="col-span-full text-xs text-muted-foreground">Valor estimado dos negócios ganhos: {new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(query.data?.wonValue ?? 0)}. Não representa recebimento financeiro.</p>
           </div>
         )}
       </FeatureAvailability>
@@ -99,13 +99,13 @@ export function CampaignAnalyticsRoute() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Analytics" title="Performance de campanhas" description="Comparativo de resposta, qualificação e oportunidades por campanha." />
+      <PageHeader eyebrow="Analytics" title="Performance de campanhas" description="Estados atuais de leads associados e oportunidades vinculadas; não são atribuições causais de envio." />
       <FeatureAvailability feature="Analytics de campanhas" supported={supported}>
         {query.isLoading ? <Skeleton className="h-72" /> : (
           <div className="surface-panel divide-y overflow-hidden">
             {(query.data ?? []).map((campaign) => (
               <div key={campaign.id} className="grid gap-4 p-4 md:grid-cols-[1fr_repeat(4,100px)] md:items-center">
-                <div><div className="flex items-center gap-2"><p className="font-semibold">{campaign.name}</p><StatusPill tone={campaign.status === "running" ? "success" : "warning"}>{campaign.status === "running" ? "rodando" : "pausada"}</StatusPill></div><p className="mt-1 text-xs text-muted-foreground">{campaign.audience} leads</p></div>
+                <div><div className="flex items-center gap-2"><p className="font-semibold">{campaign.name}</p><StatusPill tone={campaign.status === "running" ? "success" : "warning"}>{campaign.status === "running" ? "acompanhamento" : campaign.status === "completed" ? "concluída" : campaign.status === "draft" ? "rascunho" : "pausada"}</StatusPill></div><p className="mt-1 text-xs text-muted-foreground">{campaign.audience} leads</p></div>
                 <MiniMetric label="Respostas" value={campaign.replied} />
                 <MiniMetric label="Qualif." value={campaign.qualified} />
                 <MiniMetric label="Opps" value={campaign.opportunities} />

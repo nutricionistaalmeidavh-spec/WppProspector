@@ -29,6 +29,8 @@ import type { SqliteConsentStore } from "../../../whatsapp-connectivity/infrastr
 import { createAdminSessionGuard } from "./session-guard.ts";
 import type { AutomationStore } from "../../../automation/automation-store.ts";
 import { registerAutomationRoutes } from "../../../automation/automation.routes.ts";
+import { CrmStore } from "../../../crm/crm-store.ts";
+import { registerCrmRoutes } from "../../../crm/crm-routes.ts";
 
 export interface AdminRoutesDeps {
   config: ResolvedAdminConfig;
@@ -123,8 +125,10 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   await app.register(registerAdminCapabilitiesRoutes, {
     conversationActions: true,
     prospecting: deps.prospectingEnabled ?? true,
+    crm: { opportunities: true, companies: true, campaigns: true },
   });
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
+  await app.register(registerCrmRoutes, { store: new CrmStore(deps.db) });
   if (deps.consent) await app.register(registerConsentRoutes, { consent: deps.consent });
   if (deps.automation && deps.consent) await app.register(registerAutomationRoutes, {
     automation: deps.automation, consent: deps.consent, followupsEnabled: deps.followupsEnabled ?? false,
