@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import type { Company, CampaignSummary, Opportunity, OpportunityStage } from "./types";
 import { OPPORTUNITY_STAGES, OPPORTUNITY_STAGE_LABEL } from "./types";
 
-function Field({id,label,children}:{id:string;label:string;children:React.ReactNode}) {
+function Field({id,label,children}:{id:string;label:string;children:ReactNode}) {
   return <div className="space-y-1"><Label htmlFor={id}>{label}</Label>{children}</div>;
 }
 function Notice({error,success}:{error:string;success:string}) {

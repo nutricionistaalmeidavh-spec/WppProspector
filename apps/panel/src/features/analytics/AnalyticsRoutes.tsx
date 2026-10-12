@@ -7,9 +7,18 @@ import { StatusPill } from "@/components/StatusPill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getCrmRepository } from "@/features/crm/repository";
+import { apiFetch } from "@/api/client";
 import { useCrmRuntime } from "@/features/crm/runtime";
 import { OPPORTUNITY_STAGES, OPPORTUNITY_STAGE_LABEL } from "@/features/crm/types";
 
+interface ConversionMetrics {
+  total:number;qualified:number;proposal:number;won:number;wonValue:number;
+  stages:Record<string,number>;
+}
+function useConversionMetrics(enabled:boolean) {
+  return useQuery({queryKey:["crm","analytics","conversions"],
+    queryFn:()=>apiFetch<ConversionMetrics>("/crm/analytics/conversions"),enabled});
+}
 function useAnalyticsCrm() {
   const runtime = useCrmRuntime();
   const repository = useMemo(
