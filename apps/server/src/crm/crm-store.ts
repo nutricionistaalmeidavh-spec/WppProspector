@@ -128,7 +128,7 @@ export class CrmStore {
     return this.getOpportunity(id);
   }
   getOpportunityHistory(id:string):Array<{fromStage:string|null;toStage:string;occurredAt:string}>{
-    const rows=this.db.prepare("SELECT from_stage,to_stage,occurred_at FROM crm_stage_events WHERE opportunity_id=? ORDER BY occurred_at,id").all(id) as Row[];
+    const rows=this.db.prepare("SELECT from_stage,to_stage,occurred_at FROM crm_stage_events WHERE opportunity_id=? ORDER BY occurred_at,rowid").all(id) as Row[];
     return rows.map(r=>({fromStage:r.from_stage==null?null:String(r.from_stage),toStage:str(r,"to_stage"),occurredAt:str(r,"occurred_at")}));
   }
   createCampaign(data:CampaignInput):Campaign{
