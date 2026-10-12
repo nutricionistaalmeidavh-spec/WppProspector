@@ -8,6 +8,7 @@ import { z } from "zod";
 export const capabilitiesSchema = z.object({
   conversationActions: z.boolean(),
   prospecting: z.boolean(),
+  crm: z.object({ opportunities: z.boolean(), companies: z.boolean(), campaigns: z.boolean() }).optional(),
 });
 
 export type Capabilities = z.infer<typeof capabilitiesSchema>;

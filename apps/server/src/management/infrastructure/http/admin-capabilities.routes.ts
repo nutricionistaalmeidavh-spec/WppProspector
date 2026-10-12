@@ -6,6 +6,7 @@ export interface AdminCapabilitiesRoutesDeps {
   /** Famílias de ação montadas neste processo. */
   conversationActions: boolean;
   prospecting: boolean;
+  crm?: { opportunities: boolean; companies: boolean; campaigns: boolean };
 }
 
 /**
@@ -21,6 +22,7 @@ export const registerAdminCapabilitiesRoutes: FastifyPluginAsync<
     return replyWithContract(reply, capabilitiesSchema, {
       conversationActions: deps.conversationActions,
       prospecting: deps.prospecting,
+      ...(deps.crm ? { crm: deps.crm } : {}),
     });
   });
 };

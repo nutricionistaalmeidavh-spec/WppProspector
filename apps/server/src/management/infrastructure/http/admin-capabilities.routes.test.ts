@@ -22,7 +22,8 @@ describe("GET /admin/api/capabilities", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ conversationActions: true, prospecting: true });
+    expect(res.json()).toEqual({ conversationActions: true, prospecting: true,
+      crm: { opportunities: true, companies: true, campaigns: true } });
   });
 
   it("sem sessão → 401", async () => {

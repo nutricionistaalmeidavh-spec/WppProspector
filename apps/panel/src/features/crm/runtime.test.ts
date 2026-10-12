@@ -34,14 +34,14 @@ describe("resolveCrmRuntime", () => {
     });
   });
 
-  it("mantém mock automático apenas em desenvolvimento", () => {
+  it("não utiliza dados simulados sem capabilities nem em desenvolvimento", () => {
     const runtime = resolveCrmRuntime(null, true);
 
-    expect(runtime.source).toBe("mock");
+    expect(runtime.source).toBe("disabled");
     expect(runtime.modules).toEqual({
-      opportunities: true,
-      companies: true,
-      campaigns: true,
+      opportunities: false,
+      companies: false,
+      campaigns: false,
     });
   });
 });

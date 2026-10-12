@@ -17,12 +17,6 @@ const DISABLED_MODULES: CrmModules = {
   campaigns: false,
 };
 
-const DEVELOPMENT_MODULES: CrmModules = {
-  opportunities: true,
-  companies: true,
-  campaigns: true,
-};
-
 export function resolveCrmRuntime(
   capabilities: UiCapabilities | null | undefined,
   development = import.meta.env.DEV,
@@ -37,9 +31,9 @@ export function resolveCrmRuntime(
     return { source: supported ? "http" : "disabled", modules };
   }
 
-  if (development) {
-    return { source: "mock", modules: DEVELOPMENT_MODULES };
-  }
+  // Nunca exibir empresas/campanhas fictícias como se fossem dados operacionais.
+  void development;
+
 
   return { source: "disabled", modules: DISABLED_MODULES };
 }
