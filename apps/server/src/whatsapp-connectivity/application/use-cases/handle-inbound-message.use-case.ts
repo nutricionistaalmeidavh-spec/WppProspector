@@ -15,6 +15,7 @@ export class HandleInboundMessageUseCase {
   constructor(
     private readonly logger: Logger,
     private readonly inboundMessagePort: InboundMessagePort,
+    private readonly consent?: { processInbound(phone: string, text: string): boolean },
   ) {}
 
   execute(raw: RawInboundMessage): void {
@@ -35,11 +36,10 @@ export class HandleInboundMessageUseCase {
     });
 
     this.logger.info("Mensagem inbound recebida", {
-      from: message.from,
       messageId: message.messageId,
-      text: message.text,
       timestamp: message.timestamp.toISOString(),
     });
+    if (this.consent?.processInbound(`+${message.from.replace(/\D/g, "")}`, message.text)) return;
 
     try {
       this.inboundMessagePort.receive({

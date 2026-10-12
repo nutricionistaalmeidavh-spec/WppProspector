@@ -7,7 +7,7 @@ import type { OutboundTextMessage } from "../../domain/outbound-text-message.ts"
 
 type Msg = { key?: { id?: string; remoteJid?: string; fromMe?: boolean }; message?: { conversation?: string; extendedTextMessage?: { text?: string } }; messageTimestamp?: number | string | { toNumber(): number } };
 type Socket = {
-  ev: { on(event: string, callback: (arg: any) => void): void };
+  ev: { on(event: string, callback: (arg: unknown) => void): void };
   onWhatsApp(phone: string): Promise<Array<{ exists?: boolean; jid?: string }> | undefined>;
   sendMessage(jid: string, message: { text: string }): Promise<{ key?: { id?: string } } | undefined>;
   end(error?: Error): void;
@@ -74,7 +74,8 @@ export class BaileysGateway implements WhatsAppGatewayPort {
       logger: { level: "silent", child: () => ({ level: "silent" }), trace() {}, debug() {}, info() {}, warn() {}, error() {} } });
     this.sock = sock;
     sock.ev.on("creds.update", () => { void saveCreds().catch((e: unknown) => console.error("Não foi possível salvar credenciais da sessão", e)); });
-    sock.ev.on("connection.update", (update: { connection?: string; qr?: string; lastDisconnect?: { error?: { output?: { statusCode?: number } } } }) => {
+    sock.ev.on("connection.update", (raw: unknown) => {
+      const update = raw as { connection?: string; qr?: string; lastDisconnect?: { error?: { output?: { statusCode?: number } } } };
       if (this.sock !== sock) return;
       if (update.qr) {
         this.qr = update.qr;
@@ -92,7 +93,8 @@ export class BaileysGateway implements WhatsAppGatewayPort {
         if (!loggedOut && this.shouldReconnect) this.reconnect();
       }
     });
-    sock.ev.on("messages.upsert", (batch: { type?: string; messages?: Msg[] }) => {
+    sock.ev.on("messages.upsert", (raw: unknown) => {
+      const batch = raw as { type?: string; messages?: Msg[] };
       if (this.sock !== sock || batch.type !== "notify") return;
       for (const message of batch.messages ?? []) {
         if (message.key?.fromMe || !message.key?.id) continue;
