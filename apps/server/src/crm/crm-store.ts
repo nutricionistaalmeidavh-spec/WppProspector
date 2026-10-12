@@ -106,12 +106,12 @@ export class CrmStore {
     if(!old)return null;
     const companyId=patch.companyId??str(old,"company_id");
     const leadPhone=patch.leadPhone??str(old,"lead_phone");
-    const campaignId=patch.campaignId===undefined?old.campaign_id:patch.campaignId;
+    const campaignId=patch.campaignId===undefined?(old.campaign_id==null?null:String(old.campaign_id)):patch.campaignId;
     if(!this.exists("crm_companies","id",companyId))throw new Error("Empresa não encontrada.");
     if(!this.exists("leads","phone",leadPhone))throw new Error("Lead não encontrado.");
     if(campaignId&&!this.exists("crm_campaigns","id",String(campaignId)))throw new Error("Campanha não encontrada.");
     const stage=patch.stage??old.stage as Stage,at=this.now();
-    const wonAt=stage==="won"?(old.stage==="won"?old.won_at:at):null;
+    const wonAt=stage==="won"?(old.stage==="won"&&old.won_at?String(old.won_at):at):null;
     this.db.exec("BEGIN");
     try{
       this.db.prepare(`UPDATE crm_opportunities SET title=?,company_id=?,lead_phone=?,stage=?,estimated_cents=?,
@@ -142,7 +142,8 @@ export class CrmStore {
     if(!old)return null;
     const status=patch.status??old.status as CampaignStatus,at=this.now();
     this.db.prepare("UPDATE crm_campaigns SET name=?,status=?,started_at=?,updated_at=? WHERE id=?")
-      .run(patch.name??str(old,"name"),status,status==="running"?(old.started_at??at):old.started_at,at,id);
+      .run(patch.name??str(old,"name"),status,
+        status==="running"?(old.started_at==null?at:String(old.started_at)):(old.started_at==null?null:String(old.started_at)),at,id);
     return this.listCampaigns().find(c=>c.id===id)??null;
   }
   listCampaigns():Campaign[]{
