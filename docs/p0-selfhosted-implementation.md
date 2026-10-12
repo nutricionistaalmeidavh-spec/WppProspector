@@ -47,7 +47,7 @@ O gateway local recebe texto em chats 1:1 e exibe QR no terminal. Não há supor
 
 As rotas `/admin/api/contacts/:phone/consent` (POST com `source`), `/admin/api/contacts/:phone/opt-out` (POST) e `/admin/api/connection` (GET) exigem sessão administrativa. O envio de templates exige autorização persistida; solicitações de parada recebidas são registradas na lista de supressão.
 
-Para backup manual seguro, encerre o servidor antes de copiar `apps/server/data/app.db` e `apps/server/data/conversations`. Credenciais Baileys em `data/baileys-auth` são secretas; criptografe backups em repouso e nunca as versione.
+Para backup manual seguro, encerre o servidor antes de copiar `apps/server/data/app.db` e `apps/server/data/conversations`. Use `node scripts/backup-selfhost.mjs --server-stopped --dest /caminho/seguro`; credenciais exigem `--include-keys` explícito. Criptografe e proteja os backups. O script não verifica processos ativos.
 
 ## Critérios de aceite
 

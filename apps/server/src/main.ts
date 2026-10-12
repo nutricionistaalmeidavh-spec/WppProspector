@@ -264,7 +264,14 @@ if (isMainModule) {
         error: error instanceof Error ? error.message : String(error),
       }),
     );
-    if (rawGateway instanceof BaileysGateway) await rawGateway.start(handleInboundMessage);
+    if (rawGateway instanceof BaileysGateway) await rawGateway.start({
+      execute(message) {
+        inboundJournal.record(message);
+        handleInboundMessage.execute(message);
+        void acknowledgeInbound(message.id).catch((error: unknown) =>
+          logger.error("Falha ao confirmar evento Baileys", { error: String(error) }));
+      },
+    });
     for (const message of inboundJournal.pending()) {
       handleInboundMessage.execute(message);
       await acknowledgeInbound(message.id);

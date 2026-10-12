@@ -12,7 +12,7 @@ export class LocalRulesLlmClient implements LlmClientPort {
     if (isExtraction) {
       value = { temas: [], dores: [], modulosProvaveis: [] };
     } else {
-      const optedOut = /\b(pare|parar|cancele|cancelar|remova|remover|descadastrar|nao quero mais|nao me envie|nao tenho interesse|sair)\b/.test(normalized);
+      const optedOut = /\b(pare|parem|parar|cancele|cancelar|remova|remover|descadastrar|nao quero mais|nao me envie|nao tenho interesse|sair)\b/.test(normalized);
       const human = /\b(humano|atendente|pessoa|falar com alguem)\b/.test(normalized);
       const interested = /\b(quero contratar|tenho interesse|comprar|contratar)\b/.test(normalized);
       const replyMessages = optedOut ? [] :
