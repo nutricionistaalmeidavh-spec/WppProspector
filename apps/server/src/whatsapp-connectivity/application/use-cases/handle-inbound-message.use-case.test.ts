@@ -28,9 +28,7 @@ describe("HandleInboundMessageUseCase", () => {
     expect(logger.info).toHaveBeenCalledWith(
       "Mensagem inbound recebida",
       expect.objectContaining({
-        from: "5511999999999",
         messageId: "wamid.1",
-        text: "olá",
       }),
     );
     expect(port.receive).toHaveBeenCalledWith({
@@ -40,6 +38,9 @@ describe("HandleInboundMessageUseCase", () => {
       timestamp: new Date(1700000000 * 1000),
     });
     expect(logger.warn).not.toHaveBeenCalled();
+    // Não registrar conteúdo nem telefone em log operacional.
+    expect(logger.info).not.toHaveBeenCalledWith("Mensagem inbound recebida", expect.objectContaining({ text: "olá" }));
+    expect(logger.info).not.toHaveBeenCalledWith("Mensagem inbound recebida", expect.objectContaining({ from: "5511999999999" }));
   });
 
   it("normaliza, loga e encaminha ao port de processamento um toque em botão de template", () => {
@@ -58,9 +59,7 @@ describe("HandleInboundMessageUseCase", () => {
     expect(logger.info).toHaveBeenCalledWith(
       "Mensagem inbound recebida",
       expect.objectContaining({
-        from: "5511999999999",
         messageId: "wamid.button",
-        text: "Tenho interesse em saber mais",
       }),
     );
     expect(port.receive).toHaveBeenCalledWith({
