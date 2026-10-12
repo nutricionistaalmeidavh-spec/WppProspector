@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Bot,
+  Workflow,
   Building2,
   CircleDollarSign,
   FileUp,
@@ -55,7 +56,10 @@ export function getNavigationGroups(crm: CrmModules): NavGroup[] {
     },
     {
       label: "Atendimento",
-      items: [{ to: "/conversations/handoff", label: "Aguardando humano", icon: MessageSquareWarning }],
+      items: [
+        { to: "/conversations/handoff", label: "Aguardando humano", icon: MessageSquareWarning },
+        { to: "/automations", label: "Automações", icon: Workflow },
+      ],
     },
     {
       label: "Analytics",

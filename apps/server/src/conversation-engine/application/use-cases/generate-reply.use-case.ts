@@ -1,4 +1,4 @@
-import { BotDecision } from "../../domain/bot-decision.ts";
+import { BotDecision, type BotDecisionInput } from "../../domain/bot-decision.ts";
 import { Conversation } from "../../domain/conversation.ts";
 import type { ReplyStrategy } from "../../domain/reply-strategy.ts";
 import { InterpretationError } from "../errors.ts";
@@ -20,6 +20,7 @@ export interface GenerateReplyUseCaseDeps {
   clock?: () => Date;
   /** Backoff antes da tentativa adicional após uma falha de interpretação. */
   retryBackoffMs?: number;
+  automation?: { evaluate(leadPhone: string, text: string): BotDecisionInput | null } | undefined;
 }
 
 const sleep = (ms: number): Promise<void> =>
@@ -35,6 +36,7 @@ export class GenerateReplyUseCase {
   private readonly logger: Logger;
   private readonly clock: () => Date;
   private readonly retryBackoffMs: number;
+  private readonly automation: GenerateReplyUseCaseDeps["automation"];
 
   constructor(deps: GenerateReplyUseCaseDeps) {
     this.repository = deps.repository;
@@ -46,6 +48,7 @@ export class GenerateReplyUseCase {
     this.logger = deps.logger;
     this.clock = deps.clock ?? (() => new Date());
     this.retryBackoffMs = deps.retryBackoffMs ?? 500;
+    this.automation = deps.automation;
   }
 
   async execute(leadPhone: string, messageIds: string[]): Promise<void> {
@@ -69,9 +72,21 @@ export class GenerateReplyUseCase {
 
     const newMessages = pending.map((turn) => turn.text);
 
+    let ruleDecision: BotDecision | null = null;
+    if (this.automation && newMessages.length > 0) {
+      try {
+        const match = this.automation.evaluate(leadPhone, newMessages.at(-1)!);
+        if (match) ruleDecision = BotDecision.create(match);
+      } catch (error) {
+        this.logger.warn("Falha no motor de regras; usando interpretador padrão", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     let businessContext = "";
     try {
-      businessContext = await this.businessContextProvider.getContext({
+      if (!ruleDecision) businessContext = await this.businessContextProvider.getContext({
         conversation,
         newMessages,
       });
@@ -89,7 +104,7 @@ export class GenerateReplyUseCase {
 
     let decision: BotDecision;
     try {
-      decision = await this.interpretWithRetry(request, leadPhone);
+      decision = ruleDecision ?? await this.interpretWithRetry(request, leadPhone);
     } catch (error) {
       this.logger.error("Falha ao interpretar mensagem do lead via LLM — sem resposta", {
         leadPhone,

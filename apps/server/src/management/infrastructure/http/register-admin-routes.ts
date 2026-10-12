@@ -27,6 +27,8 @@ import { applyAdminStatic } from "./admin-static.ts";
 import { registerConsentRoutes } from "../../../whatsapp-connectivity/infrastructure/http/routes/consent.routes.ts";
 import type { SqliteConsentStore } from "../../../whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
 import { createAdminSessionGuard } from "./session-guard.ts";
+import type { AutomationStore } from "../../../automation/automation-store.ts";
+import { registerAutomationRoutes } from "../../../automation/automation.routes.ts";
 
 export interface AdminRoutesDeps {
   config: ResolvedAdminConfig;
@@ -47,6 +49,8 @@ export interface AdminRoutesDeps {
   consent?: SqliteConsentStore | undefined;
   diagnostics?: (() => { provider: string; status: string; qrAvailable: boolean }) | undefined;
   prospectingEnabled?: boolean | undefined;
+  automation?: AutomationStore | undefined;
+  followupsEnabled?: boolean | undefined;
   clock?: () => Date;
 }
 
@@ -122,6 +126,9 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   });
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
   if (deps.consent) await app.register(registerConsentRoutes, { consent: deps.consent });
+  if (deps.automation && deps.consent) await app.register(registerAutomationRoutes, {
+    automation: deps.automation, consent: deps.consent, followupsEnabled: deps.followupsEnabled ?? false,
+  });
   if (deps.diagnostics) app.get("/api/connection", async () => deps.diagnostics!());
 
   await applyAdminStatic(app, { webDistDir: deps.config.webDistDir, logger: deps.logger });
