@@ -10,6 +10,7 @@ import { LeadSerialQueue } from "./conversation-engine/infrastructure/inbound/le
 import { loadKnowledge } from "./conversation-engine/infrastructure/knowledge/knowledge-loader.ts";
 import { LexicalRetrievalBusinessContext } from "./conversation-engine/infrastructure/knowledge/lexical-retrieval.business-context.ts";
 import { AnthropicLlmClient } from "./conversation-engine/infrastructure/llm/anthropic-llm-client.ts";
+import { LocalRulesLlmClient } from "./conversation-engine/infrastructure/llm/local-rules-llm-client.ts";
 import { FileConversationRepository } from "./conversation-engine/infrastructure/persistence/file-conversation-repository.ts";
 import { NoopUsageRecorder } from "./conversation-engine/infrastructure/persistence/noop-usage-recorder.ts";
 import { SqliteUsageRecorder } from "./conversation-engine/infrastructure/persistence/sqlite-usage-recorder.ts";
@@ -28,6 +29,10 @@ import { SendOutboundMessageUseCase } from "./whatsapp-connectivity/application/
 import { SendTextMessageUseCase } from "./whatsapp-connectivity/application/use-cases/send-text-message.use-case.ts";
 import { loadEnv } from "./whatsapp-connectivity/infrastructure/config/env.ts";
 import { MetaCloudApiGateway } from "./whatsapp-connectivity/infrastructure/gateways/meta-cloud-api.gateway.ts";
+import { BaileysGateway } from "./whatsapp-connectivity/infrastructure/gateways/baileys.gateway.ts";
+import { DurableWhatsappGateway } from "./whatsapp-connectivity/infrastructure/gateways/durable-whatsapp.gateway.ts";
+import { SqliteConsentStore } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
+import { SqliteOutbox } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-outbox.ts";
 import { NoopMessagingCostRecorder } from "./whatsapp-connectivity/infrastructure/persistence/noop-messaging-cost-recorder.ts";
 import { SqliteMessagingCostRecorder } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-messaging-cost-recorder.ts";
 import { buildFastifyServer } from "./whatsapp-connectivity/infrastructure/http/fastify-server.ts";
@@ -37,17 +42,7 @@ const env = loadEnv();
 const conversationEnv = loadConversationEngineEnv();
 const logger = new ConsoleLogger();
 
-const gateway = new MetaCloudApiGateway({
-  accessToken: env.META_ACCESS_TOKEN,
-  phoneNumberId: env.META_PHONE_NUMBER_ID,
-});
 
-// Envio de template — usado pelo gatilho HTTP de prospecção (`POST /admin/api/leads/
-// :leadPhone/prospect`) quando `/admin` está ligado; segue exportado para uso manual em QA.
-export const sendOutboundMessage = new SendOutboundMessageUseCase(gateway);
-// Envio de texto de sessão — usado pelas ações de operação do painel e pelo motor
-// de conversas; segue exportado para uso manual em QA.
-export const sendTextMessage = new SendTextMessageUseCase(gateway);
 
 // --- Motor de conversas (conversation-engine) ---
 const promptText = readFileSync(
@@ -63,10 +58,9 @@ const replyStrategy = new ReplyStrategy({
   model: conversationEnv.LLM_MODEL,
   historyTurns: conversationEnv.CONVERSATION_HISTORY_TURNS,
 });
-const llmClient = new AnthropicLlmClient({
-  apiKey: conversationEnv.ANTHROPIC_API_KEY,
-  workspaceId: conversationEnv.ANTHROPIC_WORKSPACE_ID,
-});
+const llmClient = conversationEnv.LLM_PROVIDER === "anthropic"
+  ? new AnthropicLlmClient({ apiKey: conversationEnv.ANTHROPIC_API_KEY!, workspaceId: conversationEnv.ANTHROPIC_WORKSPACE_ID })
+  : new LocalRulesLlmClient();
 
 // Base de conhecimento comercial: preparada no boot. Fail-fast — se a base não
 // construir (arquivo ausente, `.md` malformado, metadado faltando, zero
@@ -103,6 +97,16 @@ try {
   );
   process.exit(1);
 }
+
+// O núcleo funciona sem Meta/Anthropic; ambos permanecem como opt-ins.
+const consentStore = new SqliteConsentStore(database);
+const outbox = new SqliteOutbox(database);
+const rawGateway = env.WHATSAPP_PROVIDER === "meta"
+  ? new MetaCloudApiGateway({ accessToken: env.META_ACCESS_TOKEN!, phoneNumberId: env.META_PHONE_NUMBER_ID! })
+  : new BaileysGateway(env.BAILEYS_AUTH_DIR);
+const gateway = new DurableWhatsappGateway(rawGateway, outbox, consentStore);
+export const sendOutboundMessage = new SendOutboundMessageUseCase(gateway);
+export const sendTextMessage = new SendTextMessageUseCase(gateway);
 
 // Registro append-only de consumo de tokens de cada chamada ao LLM. Desligado
 // por config, usa o recorder no-op e o fluxo opera como sem a feature.
@@ -187,12 +191,12 @@ const pendingInboundSweeper = new PendingInboundSweeper({
   maxAgeMs: conversationEnv.BOOT_SWEEP_MAX_AGE_MS,
 });
 
-const handleInboundMessage = new HandleInboundMessageUseCase(logger, inboundBatchCoordinator);
+const handleInboundMessage = new HandleInboundMessageUseCase(logger, inboundBatchCoordinator, consentStore);
 
 // Registro append-only das janelas de conversa de 24 h faturáveis (fonte
 // WhatsApp da capability `consumption-metrics`). Best-effort; desligado por
 // config, usa o recorder no-op e o tratamento de status opera como sem a feature.
-const messagingCostRecorder = env.WHATSAPP_COST_TRACKING_ENABLED
+const messagingCostRecorder = env.WHATSAPP_PROVIDER === "meta" && env.WHATSAPP_COST_TRACKING_ENABLED
   ? new SqliteMessagingCostRecorder(database, logger, env.WHATSAPP_BILLING_COUNTRY)
   : new NoopMessagingCostRecorder();
 const handleMessageStatusUpdate = new HandleMessageStatusUpdateUseCase(
@@ -201,13 +205,13 @@ const handleMessageStatusUpdate = new HandleMessageStatusUpdateUseCase(
 );
 
 export const app = buildFastifyServer({
-  webhook: {
+  webhook: env.WHATSAPP_PROVIDER === "meta" ? {
     handleInboundMessage,
     handleMessageStatusUpdate,
     logger,
-    webhookVerifyToken: env.META_WEBHOOK_VERIFY_TOKEN,
-    appSecret: env.META_APP_SECRET,
-  },
+    webhookVerifyToken: env.META_WEBHOOK_VERIFY_TOKEN!,
+    appSecret: env.META_APP_SECRET!,
+  } : undefined,
   admin: adminConfig
     ? {
         config: adminConfig,
@@ -218,6 +222,8 @@ export const app = buildFastifyServer({
         leads: leadRepository!,
         queue: leadSerialQueue,
         audit: new SqliteAdminActionAudit(database, logger),
+        consent: consentStore,
+        diagnostics: () => rawGateway instanceof BaileysGateway ? rawGateway.diagnostic() : { provider: "meta", status: "configured", qrAvailable: false },
         logger,
       }
     : undefined,
@@ -240,15 +246,17 @@ if (isMainModule) {
         error: error instanceof Error ? error.message : String(error),
       }),
     );
+    if (rawGateway instanceof BaileysGateway) await rawGateway.start(handleInboundMessage);
+    outbox.recoverStale();
+    await gateway.retryPending();
+    const retryTimer = setInterval(() => {
+      void gateway.retryPending().catch((e: unknown) => logger.error("Falha na outbox", { error: String(e) }));
+    }, 30_000);
+    retryTimer.unref?.();
   };
 
   boot()
-    .catch((error: unknown) =>
-      logger.error("Falha na preparação do boot", {
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    )
-    .finally(() => {
+    .then(() => {
       app
         .listen({ port: env.PORT, host: env.HOST })
         .then(() => logger.info("Servidor iniciado", { port: env.PORT }))
@@ -256,5 +264,9 @@ if (isMainModule) {
           console.error("Falha ao iniciar o servidor", error);
           process.exit(1);
         });
+    })
+    .catch((error: unknown) => {
+      logger.error("Falha ao preparar o boot", { error: error instanceof Error ? error.message : String(error) });
+      process.exitCode = 1;
     });
 }
