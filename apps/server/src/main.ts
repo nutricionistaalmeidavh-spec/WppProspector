@@ -290,13 +290,13 @@ if (isMainModule) {
     outbox.recoverStale();
     automationStore.recoverStale();
     await gateway.retryPending();
-    await followupScheduler.runDue();
+    if (env.WHATSAPP_PROVIDER === "baileys") await followupScheduler.runDue();
     const retryTimer = setInterval(() => {
       void gateway.retryPending().catch((e: unknown) => logger.error("Falha na outbox", { error: String(e) }));
     }, 30_000);
     retryTimer.unref?.();
     const followupTimer = setInterval(() => {
-      void followupScheduler.runDue().catch((e: unknown) =>
+      if (env.WHATSAPP_PROVIDER === "baileys") void followupScheduler.runDue().catch((e: unknown) =>
         logger.error("Falha ao processar follow-ups", { error: String(e) }));
     }, 30_000);
     followupTimer.unref?.();

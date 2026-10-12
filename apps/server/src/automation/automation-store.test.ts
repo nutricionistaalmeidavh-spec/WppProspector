@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../shared/persistence/sqlite/open-database.ts";
-import { AutomationStore } from "./automation-store.ts";
+import { AutomationStore, renderAutomationTemplate } from "./automation-store.ts";
 
 describe("AutomationStore", () => {
+  it("renderiza somente variáveis locais permitidas",()=>{
+    expect(renderAutomationTemplate("De {telefone}: {mensagem}; {segredo}", "+5516999999999", "Oi"))
+      .toBe("De +5516999999999: Oi; {segredo}");
+  });
   it("responde gatilhos com correspondência normalizada por acentos e prioridade", () => {
     const db = openDatabase(":memory:");
     const store = new AutomationStore(db);

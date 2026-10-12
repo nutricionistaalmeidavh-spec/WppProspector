@@ -41,6 +41,12 @@ export interface Followup {
 }
 
 const normalize = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim().replace(/\s+/g," ");
+
+/** Templates textuais apenas com variáveis explícitas e valores locais. */
+export function renderAutomationTemplate(source:string, phone:string, inboundText:string):string {
+  return source.replace(/\{(telefone|mensagem)\}/g, (_token:string,key:string)=>
+    key==="telefone" ? phone : inboundText.slice(0,500));
+}
 function decision(replyMessages: string[], handoffToHuman = false): BotDecisionInput {
   return {
     replyMessages, endConversation: false, leadIntent: "needs_more_info",
@@ -86,7 +92,13 @@ export class AutomationStore {
         if(row){
           const rule=this.ruleRow(row);
           const option=rule.options.find(o=>normalize(o.key)===normalized);
-          if(option)return decision([option.response],option.handoff);
+          if(option)return decision([renderAutomationTemplate(option.response,phone,text)],option.handoff);
+          if(normalized!==normalize(rule.trigger)){
+            const expires=new Date(this.clock().getTime()+24*60*60*1000).toISOString();
+            this.db.prepare("INSERT INTO automation_menu_sessions(phone,rule_id,created_at,expires_at) VALUES (?,?,?,?)")
+              .run(phone,rule.id,now,expires);
+            return decision([`Opção não reconhecida.\n${renderAutomationTemplate(rule.response,phone,text)}\n${rule.options.map(o=>`${o.key}. ${o.label}`).join("\n")}`]);
+          }
         }
       }
     }
@@ -103,9 +115,9 @@ export class AutomationStore {
         this.db.prepare(`INSERT INTO automation_menu_sessions(phone,rule_id,created_at,expires_at) VALUES (?,?,?,?)
           ON CONFLICT(phone) DO UPDATE SET rule_id=excluded.rule_id,created_at=excluded.created_at,expires_at=excluded.expires_at`)
           .run(phone,rule.id,now,expires);
-        return decision([`${rule.response}\n${rule.options.map(o=>`${o.key}. ${o.label}`).join("\n")}`]);
+        return decision([`${renderAutomationTemplate(rule.response,phone,text)}\n${rule.options.map(o=>`${o.key}. ${o.label}`).join("\n")}`]);
       }
-      return decision([rule.response],rule.action==="handoff");
+      return decision([renderAutomationTemplate(rule.response,phone,text)],rule.action==="handoff");
     }
     return null;
   }

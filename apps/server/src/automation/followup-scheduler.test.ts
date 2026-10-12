@@ -33,11 +33,11 @@ describe("FollowupScheduler", () => {
     expect(sender).toHaveBeenCalledTimes(1);
     expect(store.listFollowups()[0]?.state).toBe("sent");
     expect(a.id).toBeDefined();
-    store.scheduleFollowup({ phone, message: "Outro", dueAt: new Date(now.getTime()+60_000).toISOString() }, consent);
+    const second=store.scheduleFollowup({ phone, message: "Outro", dueAt: new Date(now.getTime()+60_000).toISOString() }, consent);
     consent.optOut(phone);
     await scheduler.runDue();
     expect(sender).toHaveBeenCalledTimes(1);
-    expect(store.listFollowups()[0]?.state).toBe("cancelled");
+    expect(store.getFollowup(second.id)?.state).toBe("cancelled");
     db.close();
   });
 });
