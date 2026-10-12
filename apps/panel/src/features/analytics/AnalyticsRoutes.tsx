@@ -105,7 +105,7 @@ export function CampaignAnalyticsRoute() {
           <div className="surface-panel divide-y overflow-hidden">
             {(query.data ?? []).map((campaign) => (
               <div key={campaign.id} className="grid gap-4 p-4 md:grid-cols-[1fr_repeat(4,100px)] md:items-center">
-                <div><div className="flex items-center gap-2"><p className="font-semibold">{campaign.name}</p><StatusPill tone={campaign.status === "running" ? "success" : "warning"}>{campaign.status === "running" ? "rodando" : "pausada"}</StatusPill></div><p className="mt-1 text-xs text-muted-foreground">{campaign.audience} leads</p></div>
+                <div><div className="flex items-center gap-2"><p className="font-semibold">{campaign.name}</p><StatusPill tone={campaign.status === "running" ? "success" : "warning"}>{campaign.status === "running" ? "acompanhamento" : campaign.status === "completed" ? "concluída" : campaign.status === "draft" ? "rascunho" : "pausada"}</StatusPill></div><p className="mt-1 text-xs text-muted-foreground">{campaign.audience} leads</p></div>
                 <MiniMetric label="Respostas" value={campaign.replied} />
                 <MiniMetric label="Qualif." value={campaign.qualified} />
                 <MiniMetric label="Opps" value={campaign.opportunities} />
