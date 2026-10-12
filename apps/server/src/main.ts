@@ -33,6 +33,8 @@ import { BaileysGateway } from "./whatsapp-connectivity/infrastructure/gateways/
 import { DurableWhatsappGateway } from "./whatsapp-connectivity/infrastructure/gateways/durable-whatsapp.gateway.ts";
 import { SqliteConsentStore } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
 import { SqliteOutbox } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-outbox.ts";
+import { SqliteInboundJournal } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-inbound-journal.ts";
+import { optOutRequested } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
 import { NoopMessagingCostRecorder } from "./whatsapp-connectivity/infrastructure/persistence/noop-messaging-cost-recorder.ts";
 import { SqliteMessagingCostRecorder } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-messaging-cost-recorder.ts";
 import { buildFastifyServer } from "./whatsapp-connectivity/infrastructure/http/fastify-server.ts";
@@ -101,6 +103,7 @@ try {
 // O núcleo funciona sem Meta/Anthropic; ambos permanecem como opt-ins.
 const consentStore = new SqliteConsentStore(database);
 const outbox = new SqliteOutbox(database);
+const inboundJournal = new SqliteInboundJournal(database);
 const rawGateway = env.WHATSAPP_PROVIDER === "meta"
   ? new MetaCloudApiGateway({ accessToken: env.META_ACCESS_TOKEN!, phoneNumberId: env.META_PHONE_NUMBER_ID! })
   : new BaileysGateway(env.BAILEYS_AUTH_DIR);
@@ -194,6 +197,17 @@ const pendingInboundSweeper = new PendingInboundSweeper({
 
 const handleInboundMessage = new HandleInboundMessageUseCase(logger, inboundBatchCoordinator, consentStore);
 
+async function acknowledgeInbound(id: string): Promise<void> {
+  await leadSerialQueue.whenSettled();
+  const saved = inboundJournal.pending().find(message => message.id === id);
+  if (!saved) return;
+  const phone = `+${saved.from.replace(/\D/g, "")}`;
+  const persisted = (await conversationRepository.load(phone))?.hasProcessed(id) ?? false;
+  if (persisted || (optOutRequested(saved.text?.body ?? "") && consentStore.isOptedOut(phone))) {
+    inboundJournal.markStored(id);
+  }
+}
+
 // Registro append-only das janelas de conversa de 24 h faturáveis (fonte
 // WhatsApp da capability `consumption-metrics`). Best-effort; desligado por
 // config, usa o recorder no-op e o tratamento de status opera como sem a feature.
@@ -212,6 +226,8 @@ export const app = buildFastifyServer({
     logger,
     webhookVerifyToken: env.META_WEBHOOK_VERIFY_TOKEN!,
     appSecret: env.META_APP_SECRET!,
+    inboundJournal,
+    acknowledgeInbound,
   } : undefined,
   admin: adminConfig
     ? {
@@ -249,6 +265,10 @@ if (isMainModule) {
       }),
     );
     if (rawGateway instanceof BaileysGateway) await rawGateway.start(handleInboundMessage);
+    for (const message of inboundJournal.pending()) {
+      handleInboundMessage.execute(message);
+      await acknowledgeInbound(message.id);
+    }
     outbox.recoverStale();
     await gateway.retryPending();
     const retryTimer = setInterval(() => {
