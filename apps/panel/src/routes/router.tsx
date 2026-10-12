@@ -20,6 +20,7 @@ import { CampaignDetailRoute, CampaignsRoute, ImportsRoute } from "@/features/ca
 import { InboxRoute } from "@/features/inbox/InboxRoute";
 import { CampaignAnalyticsRoute, ConversionsRoute, FunnelRoute } from "@/features/analytics/AnalyticsRoutes";
 import { SettingsRoute } from "@/features/settings/SettingsRoute";
+import { AutomationRoute } from "@/features/automations/AutomationRoute";
 
 function ProtectedLayout() {
   const { status } = useSession();
@@ -65,6 +66,7 @@ export const appRoutes: RouteObject[] = [
       { path: "analytics/conversions", element: <ConversionsRoute /> },
       { path: "analytics/costs", element: <ConsumptionRoute /> },
 
+      { path: "automations", element: <AutomationRoute /> },
       { path: "settings", element: <SettingsRoute /> },
 
       { path: "conversations", element: <Navigate to="/conversations/inbox" replace /> },
