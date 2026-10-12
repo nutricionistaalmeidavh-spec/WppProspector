@@ -21,6 +21,8 @@ let child;
 let output = '';
 const env = {
   ...process.env,
+  WHATSAPP_PROVIDER: 'meta',
+  LLM_PROVIDER: 'anthropic',
   META_ACCESS_TOKEN: 'qa-no-external-calls',
   META_APP_SECRET: 'qa-no-external-calls',
   META_PHONE_NUMBER_ID: 'qa-no-external-calls',

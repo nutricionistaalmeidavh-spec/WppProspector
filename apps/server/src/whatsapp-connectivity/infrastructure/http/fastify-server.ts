@@ -9,7 +9,7 @@ import {
 } from "./routes/whatsapp-webhook.routes.ts";
 
 export interface BuildFastifyServerOptions {
-  webhook: WhatsappWebhookRoutesDeps;
+  webhook?: WhatsappWebhookRoutesDeps | undefined;
   /**
    * Deps do plugin de gestão. Presente ⇒ `ADMIN_ENABLED` (o `main.ts` só
    * preenche quando ligada). Montado sob `/admin`, no mesmo processo, isolado do
@@ -22,7 +22,7 @@ export interface BuildFastifyServerOptions {
 export function buildFastifyServer(options: BuildFastifyServerOptions): FastifyInstance {
   const app = Fastify();
 
-  app.register(registerWhatsappWebhookRoutes, options.webhook);
+  if (options.webhook !== undefined) app.register(registerWhatsappWebhookRoutes, options.webhook);
 
   if (options.admin !== undefined) {
     app.register(registerAdminRoutes, { prefix: "/admin", ...options.admin });

@@ -60,6 +60,14 @@ function signature(body: string): string {
 }
 
 describe("buildFastifyServer", () => {
+  it("modo local funciona sem webhook Meta", async () => {
+    const app = buildFastifyServer({ admin: adminDeps() });
+    await app.ready();
+    expect((await app.inject({method:"POST",url:"/webhooks/whatsapp"})).statusCode).toBe(404);
+    expect((await app.inject({method:"GET",url:"/admin/api/stats/overview"})).statusCode).toBe(401);
+    await app.close();
+  });
+
   it("sem admin: nenhuma rota /admin existe (404) e o webhook responde", async () => {
     const app = buildFastifyServer({ webhook: webhookDeps });
     await app.ready();

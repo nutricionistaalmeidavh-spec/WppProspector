@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { HandleInboundMessageUseCase } from "../../../application/use-cases/handle-inbound-message.use-case.ts";
 import type { HandleMessageStatusUpdateUseCase } from "../../../application/use-cases/handle-message-status-update.use-case.ts";
 import type { Logger } from "../../../application/ports/logger.port.ts";
+import type { SqliteInboundJournal } from "../../persistence/sqlite-inbound-journal.ts";
 import { extractWebhookEvents, webhookPayloadSchema } from "../../webhook/webhook-event.schema.ts";
 import { isValidWebhookSignature } from "../webhook-signature.guard.ts";
 
@@ -18,6 +19,8 @@ export interface WhatsappWebhookRoutesDeps {
   logger: Logger;
   webhookVerifyToken: string;
   appSecret: string;
+  inboundJournal?: SqliteInboundJournal | undefined;
+  acknowledgeInbound?: ((id: string) => Promise<void>) | undefined;
 }
 
 export const registerWhatsappWebhookRoutes: FastifyPluginAsync<WhatsappWebhookRoutesDeps> = async (
@@ -85,8 +88,11 @@ export const registerWhatsappWebhookRoutes: FastifyPluginAsync<WhatsappWebhookRo
 
     for (const event of extractWebhookEvents(parsed.data)) {
       if (event.type === "message") {
+        // Persistir ANTES de confirmar o webhook. Erro de SQLite provoca retry HTTP da Meta.
+        deps.inboundJournal?.record(event.message);
         void Promise.resolve()
           .then(() => deps.handleInboundMessage.execute(event.message))
+          .then(() => deps.acknowledgeInbound?.(event.message.id))
           .catch((error: unknown) =>
             deps.logger.error("Falha ao processar mensagem inbound", { error }),
           );
