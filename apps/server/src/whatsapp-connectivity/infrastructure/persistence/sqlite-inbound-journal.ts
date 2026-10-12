@@ -9,6 +9,12 @@ export class SqliteInboundJournal {
       VALUES(?,?,?)`).run(message.id, JSON.stringify(message), new Date().toISOString());
   }
 
+  get(messageId: string): RawInboundMessage | null {
+    const row = this.db.prepare("SELECT payload_json FROM inbound_journal WHERE message_id=? AND state='pending'")
+      .get(messageId) as { payload_json: string } | undefined;
+    return row ? JSON.parse(row.payload_json) as RawInboundMessage : null;
+  }
+
   pending(limit = 1000): RawInboundMessage[] {
     return (this.db.prepare(`SELECT payload_json FROM inbound_journal WHERE state='pending'
       ORDER BY received_at LIMIT ?`).all(limit) as Array<{ payload_json: string }>)

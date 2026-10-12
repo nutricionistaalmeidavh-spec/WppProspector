@@ -9,7 +9,7 @@ const envSchema = z.object({
   META_WABA_ID: z.string().min(1).optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().min(1).optional(),
   PORT: z.coerce.number().int().positive().default(3000),
-  HOST: z.string().min(1).default("127.0.0.1"),
+  HOST: z.string().min(1).optional(),
   WHATSAPP_COST_TRACKING_ENABLED: z.enum(["true", "false"]).default("true").transform(value => value === "true"),
   WHATSAPP_BILLING_COUNTRY: z.string().length(2).default("BR").transform(value => value.toUpperCase()),
 }).superRefine((value, ctx) => {
@@ -17,7 +17,10 @@ const envSchema = z.object({
   for (const key of ["META_ACCESS_TOKEN", "META_APP_SECRET", "META_PHONE_NUMBER_ID", "META_WABA_ID", "META_WEBHOOK_VERIFY_TOKEN"] as const) {
     if (!value[key]) ctx.addIssue({ code: "custom", path: [key], message: key + " é obrigatório quando WHATSAPP_PROVIDER=meta" });
   }
-});
+}).transform(value => ({
+  ...value,
+  HOST: value.HOST ?? (value.WHATSAPP_PROVIDER === "meta" ? "0.0.0.0" : "127.0.0.1"),
+}));
 
 export type Env = z.infer<typeof envSchema>;
 

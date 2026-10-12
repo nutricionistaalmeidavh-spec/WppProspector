@@ -4,8 +4,8 @@ const envSchema = z.object({
   LLM_PROVIDER: z.enum(["rules", "anthropic"]).default("rules"),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   ANTHROPIC_WORKSPACE_ID: z.string().min(1).optional(),
-  LLM_MODEL: z.string().min(1).default("local-rules"),
-  EXTRACTION_LLM_MODEL: z.string().min(1).default("local-rules"),
+  LLM_MODEL: z.string().min(1).optional(),
+  EXTRACTION_LLM_MODEL: z.string().min(1).optional(),
   CONVERSATION_BATCH_WINDOW_MS: z.coerce.number().int().positive().default(8000),
   CONVERSATION_HISTORY_TURNS: z.coerce.number().int().positive().default(20),
   CONVERSATIONS_DIR: z.string().min(1).default("./data/conversations"),
@@ -19,7 +19,11 @@ const envSchema = z.object({
   if (value.LLM_PROVIDER === "anthropic" && !value.ANTHROPIC_API_KEY) {
     ctx.addIssue({ code: "custom", path: ["ANTHROPIC_API_KEY"], message: "ANTHROPIC_API_KEY é obrigatório com LLM_PROVIDER=anthropic" });
   }
-});
+}).transform(value => ({
+  ...value,
+  LLM_MODEL: value.LLM_MODEL ?? (value.LLM_PROVIDER === "anthropic" ? "claude-sonnet-5" : "local-rules"),
+  EXTRACTION_LLM_MODEL: value.EXTRACTION_LLM_MODEL ?? (value.LLM_PROVIDER === "anthropic" ? "claude-haiku-4-5-20251001" : "local-rules"),
+}));
 
 export type ConversationEngineEnv = z.infer<typeof envSchema>;
 

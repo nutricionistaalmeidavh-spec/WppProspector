@@ -3,7 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 export function optOutRequested(text: string): boolean {
   const n = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   return /^(sair|stop|parar|pare|remover|remova|descadastrar|cancelar)([!.\s]|$)/.test(n) ||
-    /\b(nao quero mais mensagens|nao me mande mensagens|pare de me enviar|parem de me enviar|retire meu numero)\b/.test(n);
+    /\b(nao quero mais mensagens|nao tenho interesse|nao me mande mensagens|pare de me enviar|parem de me enviar|retire meu numero)\b/.test(n);
 }
 
 export class SqliteConsentStore {

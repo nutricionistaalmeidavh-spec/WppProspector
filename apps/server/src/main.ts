@@ -199,11 +199,11 @@ const handleInboundMessage = new HandleInboundMessageUseCase(logger, inboundBatc
 
 async function acknowledgeInbound(id: string): Promise<void> {
   await leadSerialQueue.whenSettled();
-  const saved = inboundJournal.pending().find(message => message.id === id);
+  const saved = inboundJournal.get(id);
   if (!saved) return;
   const phone = `+${saved.from.replace(/\D/g, "")}`;
   const persisted = (await conversationRepository.load(phone))?.hasProcessed(id) ?? false;
-  if (persisted || (optOutRequested(saved.text?.body ?? "") && consentStore.isOptedOut(phone))) {
+  if (!["text", "button"].includes(saved.type) || persisted || (optOutRequested(saved.text?.body ?? saved.button?.text ?? "") && consentStore.isOptedOut(phone))) {
     inboundJournal.markStored(id);
   }
 }
