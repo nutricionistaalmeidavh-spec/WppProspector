@@ -26,6 +26,26 @@ const opportunityData=z.object({
   source:z.string().trim().max(180).default(""),
   qualification:z.string().trim().max(180).default(""),
 });
+// PATCH nunca deve injetar os valores padrão de POST em propriedades omitidas.
+const companyPatch=z.object({
+  ...companyData.shape,
+  city:z.string().trim().max(100),
+  segment:z.string().trim().max(100),
+}).partial();
+const campaignPatch=z.object({
+  ...campaignData.shape,
+  status:z.enum(["draft","running","paused","completed"]),
+}).partial();
+const opportunityPatch=z.object({
+  ...opportunityData.shape,
+  stage:z.enum(CRM_STAGES),
+  estimatedValue:z.number().finite().min(0).max(1e9),
+  owner:z.string().trim().max(120),
+  nextAction:z.string().trim().max(500),
+  nextActionAt:z.string().max(80),
+  source:z.string().trim().max(180),
+  qualification:z.string().trim().max(180),
+}).partial();
 function responseError(err:unknown):{status:409|422;message:string}{
   const msg=err instanceof Error?err.message:"Falha ao salvar";
   if(msg.includes("UNIQUE constraint failed"))return{status:409,message:"Registro duplicado."};
@@ -41,7 +61,7 @@ export const registerCrmRoutes:FastifyPluginAsync<{store:CrmStore}>=async(app,{s
     catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
   });
   app.patch<{Params:{id:string}}>("/api/crm/companies/:id",async(req,reply)=>{
-    const params=idParams.safeParse(req.params),body=companyData.partial().safeParse(req.body);
+    const params=idParams.safeParse(req.params),body=companyPatch.safeParse(req.body);
     if(!params.success||!body.success)return reply.code(422).send({error:"Dados inválidos"});
     try{
       const value=store.updateCompany(params.data.id,body.data);
@@ -68,7 +88,7 @@ export const registerCrmRoutes:FastifyPluginAsync<{store:CrmStore}>=async(app,{s
     catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
   });
   app.patch<{Params:{id:string}}>("/api/crm/opportunities/:id",async(req,reply)=>{
-    const params=idParams.safeParse(req.params),data=opportunityData.partial().safeParse(req.body);
+    const params=idParams.safeParse(req.params),data=opportunityPatch.safeParse(req.body);
     if(!params.success||!data.success)return reply.code(422).send({error:"Dados inválidos"});
     try{
       const value=store.updateOpportunity(params.data.id,data.data);
@@ -83,7 +103,7 @@ export const registerCrmRoutes:FastifyPluginAsync<{store:CrmStore}>=async(app,{s
     return reply.code(201).send(store.createCampaign(parsed.data));
   });
   app.patch<{Params:{id:string}}>("/api/crm/campaigns/:id",async(req,reply)=>{
-    const params=idParams.safeParse(req.params),data=campaignData.partial().safeParse(req.body);
+    const params=idParams.safeParse(req.params),data=campaignPatch.safeParse(req.body);
     if(!params.success||!data.success)return reply.code(422).send({error:"Dados inválidos"});
     const result=store.updateCampaign(params.data.id,data.data);
     return result?reply.send(result):reply.code(404).send({error:"Campanha não encontrada"});
