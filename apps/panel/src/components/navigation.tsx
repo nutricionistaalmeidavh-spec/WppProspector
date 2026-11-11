@@ -4,6 +4,7 @@ import {
   Workflow,
   Building2,
   CircleDollarSign,
+  ClipboardList,
   FileUp,
   Inbox,
   KanbanSquare,
@@ -45,6 +46,7 @@ export function getNavigationGroups(crm: CrmModules): NavGroup[] {
         enabled(crm.opportunities, { to: "/crm/opportunities", label: "Oportunidades", icon: Target }),
         { to: "/crm/leads", label: "Leads", icon: UserRoundSearch },
         enabled(crm.companies, { to: "/crm/companies", label: "Empresas", icon: Building2 }),
+        enabled(crm.opportunities && crm.companies, { to: "/crm/commercial", label: "Comercial", icon: ClipboardList }),
       ]),
     },
     {

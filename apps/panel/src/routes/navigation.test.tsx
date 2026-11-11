@@ -34,6 +34,15 @@ describe("navegação CRM", () => {
     ]);
   });
 
+  it("expõe o CRM comercial somente quando as oportunidades e empresas estão disponíveis", () => {
+    const full = getNavigationGroups({opportunities:true,companies:true,campaigns:false})
+      .flatMap(group => group.items.map(item => item.label));
+    expect(full).toContain("Comercial");
+    const partial = getNavigationGroups({opportunities:true,companies:false,campaigns:false})
+      .flatMap(group => group.items.map(item => item.label));
+    expect(partial).not.toContain("Comercial");
+  });
+
   it("mostra somente os módulos CRM anunciados", () => {
     const labels = getNavigationGroups({
       opportunities: true,
