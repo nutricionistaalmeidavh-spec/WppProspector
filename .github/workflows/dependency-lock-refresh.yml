@@ -1,0 +1,45 @@
+name: Dependency Lock Refresh (temporary)
+on:
+  pull_request:
+    types: [opened]
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  refresh:
+    if: github.event.pull_request.head.ref == 'fix/dependency-security-20261111' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/dependency-security-20261111
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Rebuild lock for patched packages
+        run: npm install --package-lock-only --ignore-scripts --no-fund
+      - name: Apply safe compatible advisory fixes
+        run: npm audit fix --package-lock-only --ignore-scripts --no-fund || true
+      - name: Print remaining audit entries
+        run: |
+          npm audit --json > /tmp/deps-audit.json || true
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const audit=JSON.parse(readFileSync('/tmp/deps-audit.json','utf8'));
+          console.log('AUDIT TOTALS',JSON.stringify(audit.metadata?.vulnerabilities||{}));
+          for(const [name,a] of Object.entries(audit.vulnerabilities||{})){
+            console.log('AUDIT PACKAGE',JSON.stringify({name,severity:a.severity,via:a.via?.map(v=>typeof v==='string'?v:{title:v.title,url:v.url,severity:v.severity}),fixAvailable:a.fixAvailable}));
+          }
+          NODE
+      - name: Commit generated lockfile to PR branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git diff --exit-code -- package.json apps/server/package.json apps/panel/package.json packages/contracts/package.json
+          git add package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore(deps): regenerate lockfile with patched advisory versions'
+            git push origin HEAD:refs/heads/fix/dependency-security-20261111
+          fi
