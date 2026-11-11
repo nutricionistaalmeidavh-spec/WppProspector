@@ -28,8 +28,12 @@ jobs:
     env:
       CI: 'true'
     steps:
+      # Capturar e validar o SHA exato da branch de QA; o alvo do PR continua
+      # recebendo commits paralelos e seu merge temporario nem sempre compila.
       - name: Checkout do código
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Node.js 24
         uses: actions/setup-node@v4
