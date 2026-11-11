@@ -37,3 +37,23 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run test:smoke
+
+      - name: Testar exportação comercial isolada
+        run: node --test scripts/export-commercial.test.mjs
+
+      - name: Gerar ZIP comercial e testar instalação sem histórico Git
+        shell: bash
+        run: |
+          node scripts/export-commercial.mjs --out "$RUNNER_TEMP/wppprospector-comercial.zip"
+          mkdir -p "$RUNNER_TEMP/commercial-qa"
+          unzip -q "$RUNNER_TEMP/wppprospector-comercial.zip" -d "$RUNNER_TEMP/commercial-qa"
+          test ! -d "$RUNNER_TEMP/commercial-qa/.git"
+          test ! -e "$RUNNER_TEMP/commercial-qa/.env"
+          test ! -d "$RUNNER_TEMP/commercial-qa/apps/server/data"
+          cd "$RUNNER_TEMP/commercial-qa"
+          npm ci
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+          npm run test:smoke
