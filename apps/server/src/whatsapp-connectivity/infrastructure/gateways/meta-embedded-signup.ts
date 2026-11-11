@@ -33,9 +33,9 @@ export class MetaEmbeddedSignup {
     if(!json || typeof json!=="object" || Array.isArray(json))throw new Error("Resposta da Meta inválida");
     return json as Record<string,unknown>;
   }
-  async complete(input:{state:string;sessionCookie:string;code:string;wabaId:string;phoneNumberId:string}):Promise<MetaChannel> {
+  async complete(input:{state:string;sessionCookie:string;code:string;wabaId:string;phoneNumberId:string;pin:string}):Promise<MetaChannel> {
     this.consumeState(input.state,input.sessionCookie);
-    if(!/^\d{1,30}$/.test(input.wabaId)||!/^\d{1,30}$/.test(input.phoneNumberId)||input.code.length<1||input.code.length>4000){
+    if(!/^\d{1,30}$/.test(input.wabaId)||!/^\d{1,30}$/.test(input.phoneNumberId)||input.code.length<1||input.code.length>4000||!/^\d{6}$/.test(input.pin)){
       throw new Error("Identificadores de autorização inválidos");
     }
     const url=new URL("https://graph.facebook.com/v26.0/oauth/access_token");
@@ -57,6 +57,15 @@ export class MetaEmbeddedSignup {
     const subscribeUrl=new URL(`https://graph.facebook.com/v26.0/${input.wabaId}/subscribed_apps`);
     const subscription=await this.getJson(subscribeUrl,{method:"POST",headers});
     if(subscription.success!==true)throw new Error("Falha ao inscrever o webhook do aplicativo Meta.");
+    // Embedded Signup não registra automaticamente todos os números na Cloud API.
+    // O PIN é enviado uma única vez à Meta, nunca persistido na base local.
+    const registerUrl=new URL(`https://graph.facebook.com/v26.0/${input.phoneNumberId}/register`);
+    const registration=await this.getJson(registerUrl,{
+      method:"POST",
+      headers:{...headers,"Content-Type":"application/json"},
+      body:JSON.stringify({messaging_product:"whatsapp",pin:input.pin}),
+    });
+    if(registration.success!==true)throw new Error("A Meta não confirmou o registro do telefone na Cloud API.");
     const displayName=String(phone.verified_name??phone.display_phone_number??input.phoneNumberId).slice(0,120);
     return this.store.upsert({phoneNumberId:input.phoneNumberId,wabaId:input.wabaId,displayName,accessToken});
   }
