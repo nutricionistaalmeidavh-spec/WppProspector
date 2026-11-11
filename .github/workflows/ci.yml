@@ -66,3 +66,31 @@ jobs:
             db.close();
             console.log('PASS: Docker self-hosted, app compilado, SQLite, Baileys e regras locais sem chaves comerciais.');
           "
+
+  npm-audit-report:
+    name: Read-only npm advisory details
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: List high/critical advisories without modifying dependencies
+        run: |
+          npm audit --json > /tmp/wpp-npm-audit.json || true
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const result=JSON.parse(readFileSync('/tmp/wpp-npm-audit.json','utf8'));
+          console.log('AUDIT TOTALS',JSON.stringify(result.metadata?.vulnerabilities??{}));
+          for(const [name,item] of Object.entries(result.vulnerabilities??{})){
+            if(!['high','critical'].includes(item.severity))continue;
+            console.log('PACKAGE',JSON.stringify({
+              name,severity:item.severity,range:item.range,isDirect:item.isDirect,
+              via:item.via?.map(v=>typeof v==='string'?v:{
+                name:v.name,title:v.title,url:v.url,range:v.range,severity:v.severity
+              }),effects:item.effects,fixAvailable:item.fixAvailable
+            }));
+          }
+          NODE
