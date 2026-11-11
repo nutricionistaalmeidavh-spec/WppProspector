@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { CRM_STAGES, type CrmStore } from "./crm-store.ts";
+import type { ProspectLeadUseCase } from "../management/application/prospect-lead.use-case.ts";
+import {CustomerAlreadyConvertedError,ProspectingGatewayError} from "../management/application/errors.ts";
 
 const idParams=z.object({id:z.string().uuid()});
 const phone=z.string().regex(/^\+[1-9]\d{1,14}$/);
@@ -27,6 +29,7 @@ const opportunityData=z.object({
   qualification:z.string().trim().max(180).default(""),
   probabilityPercent:z.number().finite().min(0).max(100).default(0),
   lossReason:z.string().trim().max(400).default(""),
+  ownerUserId:z.string().uuid().nullable().optional(),
 });
 // PATCH nunca deve injetar os valores padrão de POST em propriedades omitidas.
 const companyPatch=z.object({
@@ -49,6 +52,7 @@ const opportunityPatch=z.object({
   qualification:z.string().trim().max(180),
   probabilityPercent:z.number().finite().min(0).max(100),
   lossReason:z.string().trim().max(400),
+  ownerUserId:z.string().uuid().nullable().optional(),
 }).partial();
 
 const validDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>{
@@ -70,6 +74,8 @@ const activityData=z.object({
   subject:z.string().trim().min(1).max(300),
   dueAt:validDate,
   owner:z.string().trim().max(120).default(""),
+  ownerUserId:z.string().uuid().nullable().optional(),
+  followupId:z.string().uuid().nullable().optional(),
 });
 
 function responseError(err:unknown):{status:409|422;message:string}{
@@ -78,7 +84,9 @@ function responseError(err:unknown):{status:409|422;message:string}{
   if(msg.includes("FOREIGN KEY constraint failed"))return{status:422,message:"Referência inexistente."};
   return{status:422,message:msg};
 }
-export const registerCrmRoutes:FastifyPluginAsync<{store:CrmStore}>=async(app,{store})=>{
+export const registerCrmRoutes:FastifyPluginAsync<{
+  store:CrmStore;prospectLead?:ProspectLeadUseCase;prospectingEnabled?:boolean;
+}>=async(app,{store,prospectLead,prospectingEnabled})=>{
   app.get("/api/crm/companies",async()=>({items:store.listCompanies()}));
   app.post("/api/crm/companies",async(req,reply)=>{
     const input=companyData.safeParse(req.body);
@@ -93,6 +101,22 @@ export const registerCrmRoutes:FastifyPluginAsync<{store:CrmStore}>=async(app,{s
       const value=store.updateCompany(params.data.id,body.data);
       return value?reply.send(value):reply.code(404).send({error:"Empresa não encontrada"});
     }catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
+  });
+
+
+  // Associação por ID: nunca correlacionar empresas com comparação de nomes livres.
+  app.patch<{Params:{phone:string}}>("/api/crm/leads/:phone/company",async(req,reply)=>{
+    const params=z.object({phone}).safeParse(req.params);
+    const body=z.object({companyId:z.string().uuid().nullable()}).safeParse(req.body);
+    if(!params.success||!body.success)return reply.code(422).send({error:"Associação inválida"});
+    try{return reply.send(store.linkLeadCompany(params.data.phone,body.data.companyId));}
+    catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
+  });
+  app.get("/api/crm/team",async()=>({items:store.listAssignableOperators()}));
+  app.get<{Querystring:{phone?:string}}>("/api/crm/followups",async(req,reply)=>{
+    const params=z.object({phone}).safeParse(req.query);
+    if(!params.success)return reply.code(422).send({error:"Telefone inválido"});
+    return reply.send({items:store.listAvailableFollowups(params.data.phone)});
   });
 
   app.get("/api/crm/opportunities",async()=>({items:store.listOpportunities()}));
@@ -134,6 +158,36 @@ export const registerCrmRoutes:FastifyPluginAsync<{store:CrmStore}>=async(app,{s
     const result=store.updateCampaign(params.data.id,data.data);
     return result?reply.send(result):reply.code(404).send({error:"Campanha não encontrada"});
   });
+
+  // Somente endpoint explícito, consentimento e gateway de templates habilitado.
+  // Mensagens não identificadas com campaignId continuam sem atribuição.
+  app.post<{Params:{id:string}}>("/api/crm/campaigns/:id/prospect",async(req,reply)=>{
+    const params=idParams.safeParse(req.params);
+    const body=z.object({
+      phone,
+      parameters:z.union([z.array(z.string()),z.record(z.string(),z.string())]).optional(),
+    }).safeParse(req.body);
+    if(!params.success||!body.success)return reply.code(422).send({error:"Envio inválido"});
+    if(!prospectLead||prospectingEnabled===false)
+      return reply.code(503).send({error:"Prospecção por template indisponível nesta instalação"});
+    if(!store.hasCampaignMember(params.data.id,body.data.phone))
+      return reply.code(404).send({error:"Contato não associado a esta campanha"});
+    try{
+      const sent=await prospectLead.prospect(body.data.phone,{parameters:body.data.parameters});
+      if(sent.alreadyProspected||!sent.wamid)return reply.send({outcome:"skipped",wamid:null});
+      store.recordCampaignSend(params.data.id,body.data.phone,sent.wamid);
+      return reply.send({outcome:"sent",wamid:sent.wamid});
+    }catch(e){
+      if(e instanceof CustomerAlreadyConvertedError)
+        return reply.code(409).send({error:"customer_already_converted"});
+      if(e instanceof ProspectingGatewayError){
+        store.recordCampaignFailure(params.data.id,body.data.phone);
+        return reply.code(502).send({error:"prospecting_gateway_error",reason:e.reason});
+      }
+      const err=responseError(e);return reply.code(err.status).send({error:err.message});
+    }
+  });
+
   app.get<{Params:{id:string}}>("/api/crm/campaigns/:id/members",async(req,reply)=>{
     const params=idParams.safeParse(req.params);
     if(!params.success)return reply.code(422).send({error:"ID inválido"});

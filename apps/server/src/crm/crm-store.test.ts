@@ -20,7 +20,7 @@ describe("CrmStore SQLite", () => {
     db.close();
   });
 
-  it("associa público existente sem enviar mensagens e agrega estados reais dos leads", () => {
+  it("associa público sem atribuir falsamente a campanha os estados globais do lead", () => {
     const db = openDatabase(":memory:");
     const store = new CrmStore(db);
     const now = new Date().toISOString();
@@ -28,6 +28,9 @@ describe("CrmStore SQLite", () => {
       .run("+5516999999999",now,now);
     const campaign = store.createCampaign({ name: "Contatos autorizados" });
     expect(store.addCampaignMembers(campaign.id, ["+5516999999999", "+5516888888888"])).toEqual({ added: 1, missing: ["+5516888888888"] });
+    expect(store.listCampaigns()[0]).toMatchObject({ audience: 1, sent: 0, replied: 0, failed: 0 });
+    expect(store.recordCampaignSend(campaign.id,"+5516999999999","wamid.verified.test")).toBe(true);
+    expect(store.recordCampaignReply("+5516999999999")).toBe(true);
     expect(store.listCampaigns()[0]).toMatchObject({ audience: 1, sent: 1, replied: 1, failed: 0 });
     expect(store.addCampaignMembers(campaign.id, ["+5516999999999"])).toEqual({ added: 0, missing: [] });
     db.close();

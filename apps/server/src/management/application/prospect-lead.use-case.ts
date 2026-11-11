@@ -8,6 +8,7 @@ import {
   InvalidLeadPhoneError,
   LeadNotFoundError,
   ProspectingGatewayError,
+  CustomerAlreadyConvertedError,
 } from "./errors.ts";
 import type { FirstContactTemplateConfig } from "./first-contact-template.ts";
 import type { AdminActionAuditPort } from "./ports/admin-action-audit.port.ts";
@@ -40,6 +41,8 @@ export interface ProspectLeadUseCaseDeps {
   audit: AdminActionAuditPort;
   logger: Logger;
   clock?: () => Date;
+  /** Isola o CRM da lógica de mensageria; somente primeiro contato é bloqueado. */
+  isConvertedCustomer?: (phone:string)=>boolean;
 }
 
 /**
@@ -58,6 +61,7 @@ export class ProspectLeadUseCase {
   private readonly audit: AdminActionAuditPort;
   private readonly logger: Logger;
   private readonly clock: () => Date;
+  private readonly isConvertedCustomer:(phone:string)=>boolean;
 
   constructor(deps: ProspectLeadUseCaseDeps) {
     this.leads = deps.leads;
@@ -68,6 +72,7 @@ export class ProspectLeadUseCase {
     this.audit = deps.audit;
     this.logger = deps.logger;
     this.clock = deps.clock ?? (() => new Date());
+    this.isConvertedCustomer=deps.isConvertedCustomer??(()=>false);
   }
 
   async prospect(leadPhone: string, options: ProspectLeadOptions = {}): Promise<ProspectLeadOutcome> {
@@ -79,6 +84,7 @@ export class ProspectLeadUseCase {
     if (lead === null) {
       throw new LeadNotFoundError(leadPhone);
     }
+    if(this.isConvertedCustomer(leadPhone))throw new CustomerAlreadyConvertedError(leadPhone);
 
     const alreadyContacted =
       lead.prospectingState === "sent" || lead.prospectingState === "replied";
@@ -87,6 +93,7 @@ export class ProspectLeadUseCase {
     }
 
     return this.queue.run(leadPhone, async () => {
+      if(this.isConvertedCustomer(leadPhone))throw new CustomerAlreadyConvertedError(leadPhone);
       const now = this.clock();
       const input = this.resolveTemplateInput(leadPhone, options.parameters);
 

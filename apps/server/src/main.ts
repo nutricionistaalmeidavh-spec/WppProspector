@@ -40,6 +40,7 @@ import { SqliteMessagingCostRecorder } from "./whatsapp-connectivity/infrastruct
 import { buildFastifyServer } from "./whatsapp-connectivity/infrastructure/http/fastify-server.ts";
 import { ConsoleLogger } from "./whatsapp-connectivity/infrastructure/logging/console-logger.ts";
 import { AutomationStore } from "./automation/automation-store.ts";
+import { CrmStore } from "./crm/crm-store.ts";
 import { FollowupScheduler } from "./automation/followup-scheduler.ts";
 import { OutboundTextMessage } from "./whatsapp-connectivity/domain/outbound-text-message.ts";
 
@@ -108,6 +109,7 @@ const consentStore = new SqliteConsentStore(database);
 const outbox = new SqliteOutbox(database);
 const inboundJournal = new SqliteInboundJournal(database);
 const automationStore = new AutomationStore(database);
+const crmStore = new CrmStore(database);
 const rawGateway = env.WHATSAPP_PROVIDER === "meta"
   ? new MetaCloudApiGateway({ accessToken: env.META_ACCESS_TOKEN!, phoneNumberId: env.META_PHONE_NUMBER_ID! })
   : new BaileysSessionManager(env.BAILEYS_AUTH_DIR, env.BAILEYS_SESSION_IDS);
@@ -201,7 +203,10 @@ const pendingInboundSweeper = new PendingInboundSweeper({
 });
 
 const handleInboundMessage = new HandleInboundMessageUseCase(logger, inboundBatchCoordinator, consentStore,
-  phone => { automationStore.cancelForReply(phone); });
+  (phone,text,messageId,receivedAt) => {
+    automationStore.cancelForReply(phone);
+    if(!optOutRequested(text))crmStore.recordCampaignReply(phone,messageId,receivedAt);
+  });
 
 async function acknowledgeInbound(id: string): Promise<void> {
   await leadSerialQueue.whenSettled();
@@ -263,7 +268,9 @@ const isMainModule = process.argv[1] !== undefined &&
 
 if (isMainModule) {
   const boot = async (): Promise<void> => {
-    if (conversationIndexProjection && conversationIndexProjection.isEmptyOrStale()) {
+    // O JSON é a fonte da verdade; recalcula também se o índice não está vazio,
+    // recuperando alterações ou falhas de projeção durante execuções anteriores.
+    if (conversationIndexProjection) {
       const indexed = await conversationIndexProjection.rebuildFromDir(
         conversationEnv.CONVERSATIONS_DIR,
       );

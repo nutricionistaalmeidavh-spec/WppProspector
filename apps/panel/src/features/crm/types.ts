@@ -34,6 +34,9 @@ export interface Opportunity {
   stage: OpportunityStage;
   estimatedValue: number;
   owner: string;
+  ownerUserId?: string | null;
+  probabilityPercent?: number;
+  lossReason?: string;
   nextAction: string;
   nextActionAt: string;
   campaignId?: string;

@@ -86,6 +86,7 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   });
   const registerLead = new RegisterLeadUseCase({ leads: deps.leads });
   const prospectLead = new ProspectLeadUseCase({
+    isConvertedCustomer:(phone)=>Boolean(deps.db.prepare("SELECT 1 FROM crm_customers WHERE lead_phone=?").get(phone)),
     leads: deps.leads,
     conversations: deps.repository,
     queue: deps.queue,
@@ -132,7 +133,7 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
     crm: { opportunities: true, companies: true, campaigns: true },
   });
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
-  await app.register(registerCrmRoutes, { store: new CrmStore(deps.db) });
+  await app.register(registerCrmRoutes, { store: new CrmStore(deps.db),prospectLead,prospectingEnabled:deps.prospectingEnabled??true });
   await app.register(registerTeamRoutes,{store:team});
   if (deps.consent) await app.register(registerConsentRoutes, { consent: deps.consent });
   if (deps.automation && deps.consent) await app.register(registerAutomationRoutes, {

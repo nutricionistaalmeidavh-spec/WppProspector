@@ -10,7 +10,7 @@ type Customer={id:string;name:string;leadPhone:string;companyId:string|null};
 type Quote={id:string;opportunityId:string;customerId:string;totalCents:number;status:string;
   items:Array<{description:string;quantity:number;unitCents:number;lineCents:number}>};
 type Activity={id:string;opportunityId:string;kind:string;subject:string;dueAt:string;
-  owner:string;status:"OPEN"|"DONE";completedAt:string|null};
+  owner:string;ownerUserId?:string|null;followupId?:string|null;followupState?:string|null;status:"OPEN"|"DONE";completedAt:string|null};
 type Summary={total:number;won:number;openValue:number;weightedValue:number;overdueActivities:number;
   byOwner:Array<{name:string;total:number;won:number;value:number}>;
   bySource:Array<{name:string;total:number;won:number;value:number}>};
@@ -34,10 +34,11 @@ export function CommercialRoute() {
   const quotes=useQuery({queryKey:["crm","commercial","quotes"],queryFn:()=>apiFetch<{items:Quote[]}>("/crm/quotes"),enabled});
   const activities=useQuery({queryKey:["crm","commercial","activities"],queryFn:()=>apiFetch<{items:Activity[]}>("/crm/activities"),enabled});
   const summary=useQuery({queryKey:["crm","commercial","summary"],queryFn:()=>apiFetch<Summary>("/crm/analytics/commercial"),enabled});
+  const operators=useQuery({queryKey:["crm","team"],queryFn:()=>apiFetch<{items:Array<{id:string;username:string}>}>("/crm/team"),enabled});
   const [chosen,setChosen]=useState("");
   const [items,setItems]=useState<Item[]>([{description:"",quantity:"1",unitPrice:"0"}]);
   const [notes,setNotes]=useState("");
-  const [activity,setActivity]=useState({kind:"CALL",subject:"",dueAt:new Date().toISOString().slice(0,10),owner:""});
+  const [activity,setActivity]=useState({kind:"CALL",subject:"",dueAt:new Date().toISOString().slice(0,10),ownerUserId:"",followupId:""});
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState("");
   const [error,setError]=useState("");
@@ -45,6 +46,9 @@ export function CommercialRoute() {
     opportunities.data?.items.find(o=>o.id===chosen)??opportunities.data?.items[0],
   [opportunities.data,chosen]);
   const available=Boolean(selected)&&enabled;
+  const followups=useQuery({queryKey:["crm","followups",selected?.leadPhone],
+    queryFn:()=>apiFetch<{items:Array<{id:string;dueAt:string;state:string;message:string}>}>("/crm/followups",
+      {query:{phone:selected!.leadPhone}}),enabled:available});
   async function action(fn:()=>Promise<unknown>,success:string) {
     setBusy(true);setError("");setNotice("");
     try {await fn();await client.invalidateQueries({queryKey:["crm"]});setNotice(success);}
@@ -65,7 +69,7 @@ export function CommercialRoute() {
       <div className={card}>
         <Field id="crm-commercial-opp" label="Oportunidade ativa">
           <select id="crm-commercial-opp" className={inputClass} value={selected?.id??""}
-            onChange={e=>setChosen(e.target.value)} disabled={!opportunities.data?.items.length}>
+            onChange={e=>{setChosen(e.target.value);setActivity(a=>({...a,followupId:""}));}} disabled={!opportunities.data?.items.length}>
             {(opportunities.data?.items??[]).map(o=><option key={o.id} value={o.id}>{o.companyName} — {o.title}</option>)}
           </select>
         </Field>
@@ -130,19 +134,35 @@ export function CommercialRoute() {
               <input id="crm-task-subject" className={inputClass} maxLength={300} value={activity.subject}
                 onChange={e=>setActivity(a=>({...a,subject:e.target.value}))}/>
             </Field>
-            <Field id="crm-task-owner" label="Responsável">
-              <input id="crm-task-owner" className={inputClass} maxLength={120} value={activity.owner}
-                onChange={e=>setActivity(a=>({...a,owner:e.target.value}))}/>
+            <Field id="crm-task-owner" label="Responsável da equipe">
+              <select id="crm-task-owner" className={inputClass} value={activity.ownerUserId}
+                onChange={e=>setActivity(a=>({...a,ownerUserId:e.target.value}))}>
+                <option value="">Não atribuído</option>
+                {(operators.data?.items??[]).map(user=><option key={user.id} value={user.id}>{user.username}</option>)}
+              </select>
             </Field>
+            {activity.kind==="WHATSAPP"?<Field id="crm-task-followup" label="Follow-up já agendado (opcional)">
+              <select id="crm-task-followup" className={inputClass} value={activity.followupId}
+                onChange={e=>setActivity(a=>({...a,followupId:e.target.value}))}>
+                <option value="">Atividade manual, sem envio</option>
+                {(followups.data?.items??[]).map(item=><option key={item.id} value={item.id}>
+                  {item.dueAt.slice(0,16)} · {item.state} · {item.message.slice(0,40)}
+                </option>)}
+              </select>
+            </Field>:null}
           </div>
           <button type="button" className={buttonClass} disabled={!available||busy||!activity.subject.trim()||!activity.dueAt}
             onClick={()=>void action(async()=>{
-              await apiFetch("/crm/activities",{method:"POST",body:{...activity,opportunityId:selected!.id}});
+              await apiFetch("/crm/activities",{method:"POST",body:{
+                opportunityId:selected!.id,kind:activity.kind,subject:activity.subject,dueAt:activity.dueAt,
+                ownerUserId:activity.ownerUserId||null,
+                followupId:activity.kind==="WHATSAPP"?activity.followupId||null:null,
+              }});
               setActivity(a=>({...a,subject:""}));
             },"Atividade registrada.")}>Criar atividade</button>
           <div className="space-y-2">
             {tasksOfSelected.map(task=><div key={task.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm">
-              <div><p className="font-medium">{task.subject}</p><p className="text-xs text-muted-foreground">{task.kind} · {task.dueAt} · {task.owner||"Sem responsável"} · {task.status}</p></div>
+              <div><p className="font-medium">{task.subject}</p><p className="text-xs text-muted-foreground">{task.kind} · {task.dueAt} · {task.owner||"Sem responsável"} · {task.status}{task.followupState?" · Envio: "+task.followupState:""}</p></div>
               {task.status==="OPEN"?<button type="button" className={plainButton} disabled={busy} onClick={()=>void action(
                 ()=>apiFetch("/crm/activities/"+encodeURIComponent(task.id)+"/complete",{method:"POST"}),
                 "Atividade concluída.")}>Concluir</button>:null}
