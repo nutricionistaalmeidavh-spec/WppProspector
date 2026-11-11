@@ -43,6 +43,16 @@ describe("navegação CRM", () => {
     expect(partial).not.toContain("Comercial");
   });
 
+  it("oculta gestão de equipe para agentes e gestores",()=>{
+    const modules={opportunities:true,companies:true,campaigns:false};
+    const agent=getNavigationGroups(modules,"agent").flatMap(g=>g.items.map(i=>i.label));
+    const manager=getNavigationGroups(modules,"manager").flatMap(g=>g.items.map(i=>i.label));
+    const admin=getNavigationGroups(modules,"admin").flatMap(g=>g.items.map(i=>i.label));
+    expect(agent).not.toContain("Equipe");
+    expect(manager).not.toContain("Equipe");
+    expect(admin).toContain("Equipe");
+  });
+
   it("mostra somente os módulos CRM anunciados", () => {
     const labels = getNavigationGroups({
       opportunities: true,
