@@ -86,6 +86,7 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   });
   const registerLead = new RegisterLeadUseCase({ leads: deps.leads });
   const prospectLead = new ProspectLeadUseCase({
+    isConvertedCustomer:(phone)=>Boolean(deps.db.prepare("SELECT 1 FROM crm_customers WHERE lead_phone=?").get(phone)),
     leads: deps.leads,
     conversations: deps.repository,
     queue: deps.queue,
