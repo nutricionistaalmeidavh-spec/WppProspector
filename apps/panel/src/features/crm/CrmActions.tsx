@@ -52,16 +52,17 @@ export function OpportunityCreateForm() {
   const client=useQueryClient();
   const companies=useQuery({queryKey:["crm","companies"],queryFn:()=>apiFetch<{items:Company[]}>("/crm/companies")});
   const campaigns=useQuery({queryKey:["crm","campaigns"],queryFn:()=>apiFetch<{items:CampaignSummary[]}>("/crm/campaigns")});
+  const operators=useQuery({queryKey:["crm","team"],queryFn:()=>apiFetch<{items:Array<{id:string;username:string}>}>("/crm/team")});
   const [open,setOpen]=useState(false);
   const [title,setTitle]=useState(""),[companyId,setCompanyId]=useState("");
-  const [leadPhone,setLeadPhone]=useState(""),[owner,setOwner]=useState("");
+  const [leadPhone,setLeadPhone]=useState(""),[ownerUserId,setOwnerUserId]=useState("");
   const [amount,setAmount]=useState("0"),[campaignId,setCampaignId]=useState("");
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState("");
   async function save(e:FormEvent) {
     e.preventDefault();setBusy(true);setError("");setSuccess("");
     try {
       await apiFetch("/crm/opportunities",{method:"POST",body:{
-        title,companyId,leadPhone,owner,estimatedValue:Number(amount),campaignId:campaignId||null,
+        title,companyId,leadPhone,ownerUserId:ownerUserId||null,estimatedValue:Number(amount),campaignId:campaignId||null,
       }});
       await client.invalidateQueries({queryKey:["crm"]});
       setSuccess("Oportunidade cadastrada.");setOpen(false);setTitle("");setLeadPhone("");
@@ -83,7 +84,13 @@ export function OpportunityCreateForm() {
       <Field id="opp-value" label="Valor estimado (R$)">
         <Input id="opp-value" type="number" min={0} max={1e9} step="0.01" value={amount} onChange={e=>setAmount(e.target.value)}/>
       </Field>
-      <Field id="opp-owner" label="Responsável"><Input id="opp-owner" value={owner} onChange={e=>setOwner(e.target.value)}/></Field>
+      <Field id="opp-owner" label="Responsável da equipe">
+        <select id="opp-owner" className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+          value={ownerUserId} onChange={e=>setOwnerUserId(e.target.value)}>
+          <option value="">Não atribuído</option>
+          {(operators.data?.items??[]).map(user=><option key={user.id} value={user.id}>{user.username}</option>)}
+        </select>
+      </Field>
       <Field id="opp-campaign" label="Campanha (opcional)">
         <select id="opp-campaign" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={campaignId} onChange={e=>setCampaignId(e.target.value)}>
           <option value="">Sem campanha</option>{campaigns.data?.items.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
@@ -98,6 +105,8 @@ export function OpportunityCreateForm() {
 
 export function OpportunityEditor({opportunity}:{opportunity:Opportunity}) {
   const client=useQueryClient();
+  const operators=useQuery({queryKey:["crm","team"],queryFn:()=>apiFetch<{items:Array<{id:string;username:string}>}>("/crm/team")});
+  const [ownerUserId,setOwnerUserId]=useState(opportunity.ownerUserId??"");
   const [stage,setStage]=useState<OpportunityStage>(opportunity.stage);
   const [nextAction,setNextAction]=useState(opportunity.nextAction);
   const [value,setValue]=useState(String(opportunity.estimatedValue));
@@ -106,7 +115,7 @@ export function OpportunityEditor({opportunity}:{opportunity:Opportunity}) {
     e.preventDefault();setBusy(true);setError("");setSuccess("");
     try{
       await apiFetch("/crm/opportunities/"+opportunity.id,{
-        method:"PATCH",body:{stage,nextAction,estimatedValue:Number(value)},
+        method:"PATCH",body:{stage,nextAction,estimatedValue:Number(value),ownerUserId:ownerUserId||null},
       });
       await client.invalidateQueries({queryKey:["crm"]});
       setSuccess("Oportunidade atualizada e etapa registrada no histórico.");
@@ -118,6 +127,13 @@ export function OpportunityEditor({opportunity}:{opportunity:Opportunity}) {
     <Field id="opp-stage" label="Etapa">
       <select id="opp-stage" value={stage} onChange={e=>setStage(e.target.value as OpportunityStage)} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
         {OPPORTUNITY_STAGES.map(s=><option key={s} value={s}>{OPPORTUNITY_STAGE_LABEL[s]}</option>)}
+      </select>
+    </Field>
+    <Field id="opp-owner-edit" label="Responsável da equipe">
+      <select id="opp-owner-edit" className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+        value={ownerUserId} onChange={e=>setOwnerUserId(e.target.value)}>
+        <option value="">Não atribuído</option>
+        {(operators.data?.items??[]).map(user=><option key={user.id} value={user.id}>{user.username}</option>)}
       </select>
     </Field>
     <Field id="opp-next" label="Próxima ação"><Input id="opp-next" value={nextAction} onChange={e=>setNextAction(e.target.value)} maxLength={500}/></Field>
@@ -154,6 +170,7 @@ export function CampaignManager({campaign}:{campaign:CampaignSummary}){
   const client=useQueryClient();
   const [status,setStatus]=useState(campaign.status);
   const [phones,setPhones]=useState("");
+  const [sendPhone,setSendPhone]=useState("");
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState("");
   const members=useQuery({queryKey:["crm","campaign-members",campaign.id],
     queryFn:()=>apiFetch<{items:string[]}>("/crm/campaigns/"+campaign.id+"/members")});
@@ -189,7 +206,22 @@ export function CampaignManager({campaign}:{campaign:CampaignSummary}){
       </Field>
       <Button disabled={busy||!phones.trim()} type="submit" size="sm">Adicionar ao público</Button>
     </form>
-    <p className="text-xs text-muted-foreground">Público registrado: {members.data?.items.length??campaign.audience} leads. Os indicadores refletem o estado atual desses leads, não envios causados pela campanha.</p>
+    <p className="text-xs text-muted-foreground">Público registrado: {members.data?.items.length??campaign.audience} leads. Enviados, respostas e falhas contam apenas eventos registrados nesta campanha; ações anteriores não são atribuídas retroativamente.</p>
+    <div className="flex flex-wrap items-end gap-3 rounded-lg border p-3">
+      <Field id="campaign-send-phone" label="Primeiro contato comprovado desta campanha">
+        <select id="campaign-send-phone" className="h-9 min-w-60 rounded-md border bg-background px-3 text-sm"
+          value={sendPhone} onChange={e=>setSendPhone(e.target.value)}>
+          <option value="">Selecione um lead associado</option>
+          {(members.data?.items??[]).map(phone=><option key={phone} value={phone}>{phone}</option>)}
+        </select>
+      </Field>
+      <Button type="button" size="sm" disabled={busy||!sendPhone} onClick={()=>void perform(async()=>{
+        const result=await apiFetch<{outcome:"sent"|"skipped"}>("/crm/campaigns/"+campaign.id+"/prospect",
+          {method:"POST",body:{phone:sendPhone}});
+        setSuccess(result.outcome==="sent"?"Contato enviado e atribuído a esta campanha.":"Lead já prospectado; não houve novo envio.");
+      })}>Enviar primeiro contato</Button>
+      <p className="w-full text-xs text-muted-foreground">Requer autorização vigente e conector de templates habilitado. O botão envia apenas para o contato escolhido; nunca para o público inteiro.</p>
+    </div>
     {members.data?.items.length?<div className="flex flex-wrap gap-2">{members.data.items.slice(0,100).map(phone=>
       <span key={phone} className="inline-flex items-center gap-2 rounded-md border px-2 py-1 text-xs">
         {phone}<button aria-label={"Retirar "+phone} disabled={busy} className="text-destructive" onClick={()=>void perform(async()=>{
