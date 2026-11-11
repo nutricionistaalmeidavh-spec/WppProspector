@@ -240,6 +240,12 @@ export class CrmStore {
         .run(id,opp.id,customer.id,input.notes?.trim()??"",totalCents,at);
       const add=this.db.prepare("INSERT INTO crm_quote_items(id,quote_id,description,quantity,unit_cents,line_cents) VALUES(?,?,?,?,?,?)");
       for(const item of items)add.run(randomUUID(),id,item.description,item.quantity,item.unitCents,item.lineCents);
+      if(["new","contacted","replied","qualified","meeting"].includes(opp.stage)){
+        this.db.prepare("UPDATE crm_opportunities SET stage='proposal',updated_at=? WHERE id=?")
+          .run(at,opp.id);
+        this.db.prepare("INSERT INTO crm_stage_events(id,opportunity_id,from_stage,to_stage,occurred_at) VALUES(?,?,?,?,?)")
+          .run(randomUUID(),opp.id,opp.stage,"proposal",at);
+      }
       this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
     return this.getQuote(id)!;
