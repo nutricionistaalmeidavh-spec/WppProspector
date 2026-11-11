@@ -40,6 +40,7 @@ export interface AdminLeadsRoutesDeps {
   bulkProspect: BulkProspectLeadsUseCase;
   resetLead: ResetLeadProspectingUseCase;
   leads: LeadRepositoryPort;
+  prospectingEnabled?: () => boolean;
 }
 
 const registerLeadBodySchema = z.object({
@@ -138,6 +139,7 @@ export const registerAdminLeadsRoutes: FastifyPluginAsync<AdminLeadsRoutesDeps> 
   });
 
   app.post("/api/leads/prospect", async (request, reply) => {
+    if(deps.prospectingEnabled && !deps.prospectingEnabled()) return reply.code(503).send({error:"official_meta_not_active"});
     const parsed = bulkProspectInputSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(422).send({ error: "invalid_body", issues: parsed.error.issues });
@@ -157,6 +159,7 @@ export const registerAdminLeadsRoutes: FastifyPluginAsync<AdminLeadsRoutesDeps> 
   app.post<{ Params: { leadPhone: string } }>(
     "/api/leads/:leadPhone/prospect",
     async (request, reply) => {
+      if(deps.prospectingEnabled && !deps.prospectingEnabled()) return reply.code(503).send({error:"official_meta_not_active"});
       const parsed = prospectBodySchema.safeParse(request.body ?? {});
       if (!parsed.success) {
         return reply.code(422).send({ error: "invalid_body", issues: parsed.error.issues });
