@@ -113,6 +113,11 @@ export const registerCrmRoutes:FastifyPluginAsync<{
     catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
   });
   app.get("/api/crm/team",async()=>({items:store.listAssignableOperators()}));
+  app.get<{Querystring:{phone?:string}}>("/api/crm/followups",async(req,reply)=>{
+    const params=z.object({phone}).safeParse(req.query);
+    if(!params.success)return reply.code(422).send({error:"Telefone inválido"});
+    return reply.send({items:store.listAvailableFollowups(params.data.phone)});
+  });
 
   app.get("/api/crm/opportunities",async()=>({items:store.listOpportunities()}));
   app.get<{Params:{id:string}}>("/api/crm/opportunities/:id",async(req,reply)=>{
