@@ -16,7 +16,7 @@ describe("TeamStore",()=>{
       const valid=team.authenticate("comercial","SenhaForte!2026");
       expect(valid?.role).toBe("agent");
       expect(team.sessionValid(created.id,valid!.version)).toBe(true);
-      team.setActive(created.id,false);
+      team.update(created.id,{active:false});
       expect(team.sessionValid(created.id,valid!.version)).toBe(false);
       expect(team.authenticate("comercial","SenhaForte!2026")).toBeNull();
     }finally{db.close();}
