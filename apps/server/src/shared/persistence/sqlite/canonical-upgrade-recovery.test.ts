@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import { CrmStore } from "../../crm/crm-store.ts";
+import { CrmStore } from "../../../crm/crm-store.ts";
 import { openDatabase } from "./open-database.ts";
 import { runMigrations } from "./migration-runner.ts";
 
