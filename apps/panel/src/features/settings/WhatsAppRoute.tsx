@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cloud, Link2, QrCode, RefreshCcw, ShieldCheck, Trash2, Wifi, WifiOff } from "lucide-react";
 import { Navigate } from "react-router-dom";
@@ -92,7 +92,7 @@ async function signupWithMeta(config:SignupConfig,pin:string):Promise<void>{
         response_type:"code",
         override_default_response_type:true,
         // Configuração Facebook Login for Business determina a versão v4.
-        extras:{setup:{}},
+        extras:{version:"v4",setup:{}},
       });
     }catch{done(undefined,new Error("Não foi possível abrir o login da Meta."));}
   });
@@ -121,9 +121,8 @@ export function WhatsAppRoute(){
       setQrVersion(v=>v+1);
       await client.invalidateQueries({queryKey:["whatsapp","connections"]});
     }catch(e){setError(e instanceof Error?e.message:"A operação não pôde ser concluída.");}
-    finally{setBusy(null);}
+    finally{setBusy(null);if(id==="signup")void client.invalidateQueries({queryKey:["whatsapp","signup-config"]});}
   }
-  const snapshot=result.data;
   return <div className="space-y-6">
     <PageHeader eyebrow="Configurações" title="Conexões WhatsApp"
       description="Vincule os números pelo QR local ou pela API oficial da Meta, sem expor tokens ao navegador."/>
@@ -166,10 +165,9 @@ export function WhatsAppRoute(){
           <div className="space-y-1"><label htmlFor="meta-pin" className="text-sm font-medium">PIN de 6 dígitos da verificação em duas etapas</label>
             <input id="meta-pin" className="w-full rounded-md border bg-background p-2 text-sm" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" placeholder="Crie e guarde um PIN de 6 dígitos" value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,6))}/>
             <p className="text-xs text-muted-foreground">Necessário para registrar o número na Cloud API. Guarde esse PIN em local seguro; o CRM não o armazena.</p></div>
-          <Button disabled={busy!==null||!snapshot?.signupEnabled||pin.length!==6}
+          <Button disabled={busy!==null||!snapshot?.signupEnabled||!facebookReady||!signupConfig.data?.state||pin.length!==6}
             onClick={()=>void action("signup",async()=>{
-              const config=await apiFetch<SignupConfig>("/whatsapp/meta/signup");
-              await signupWithMeta(config,pin);
+              await signupWithMeta(signupConfig.data!,pin);
             },"Número autorizado e registrado no CRM.")}>
             <Link2 className="mr-2 h-4 w-4"/> Conectar com a Meta
           </Button>
