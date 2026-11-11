@@ -15,6 +15,7 @@ const finishBody=z.object({
   code:z.string().min(1).max(4000),
   wabaId:z.string().regex(/^\d{1,30}$/),
   phoneNumberId:z.string().regex(/^\d{1,30}$/),
+  pin:z.string().regex(/^\d{6}$/),
 });
 function ownOrigin(request:{headers:{origin?:string;host?:string}}):boolean {
   const origin=request.headers.origin;
