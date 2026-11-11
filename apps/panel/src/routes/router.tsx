@@ -17,6 +17,7 @@ import { LeadsRoute } from "@/features/leads/LeadsRoute";
 import { OverviewRoute } from "@/features/overview/OverviewRoute";
 import { CompaniesRoute, OpportunityDetailRoute, OpportunitiesRoute, PipelineRoute } from "@/features/crm/CrmRoutes";
 import { CommercialRoute } from "@/features/crm/CommercialRoute";
+import { TeamRoute } from "@/features/crm/TeamRoute";
 import { CampaignDetailRoute, CampaignsRoute, ImportsRoute } from "@/features/campaigns/CampaignRoutes";
 import { InboxRoute } from "@/features/inbox/InboxRoute";
 import { CampaignAnalyticsRoute, ConversionsRoute, FunnelRoute } from "@/features/analytics/AnalyticsRoutes";
@@ -53,6 +54,7 @@ export const appRoutes: RouteObject[] = [
       { path: "crm/leads", element: <LeadsRoute /> },
       { path: "crm/companies", element: <CompaniesRoute /> },
       { path: "crm/commercial", element: <CommercialRoute /> },
+      { path: "settings/team", element: <TeamRoute /> },
 
       { path: "prospecting/campaigns", element: <CampaignsRoute /> },
       { path: "prospecting/campaigns/:id", element: <CampaignDetailRoute /> },
