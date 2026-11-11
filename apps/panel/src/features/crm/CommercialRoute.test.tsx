@@ -27,7 +27,7 @@ describe("CRM comercial", () => {
 
     renderWithProviders(<CommercialRoute />);
     expect(await screen.findByText("CRM comercial")).toBeInTheDocument();
-    expect(screen.getByText("Resultados por origem")).toBeInTheDocument();
+    expect(await screen.findByText("Resultados por origem")).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button",{name:"Converter lead selecionado"}));
     await waitFor(()=>expect(calls.some(call=>call.method==="POST" &&
       new URL(call.url).pathname.endsWith("/crm/customers/convert"))).toBe(true));
