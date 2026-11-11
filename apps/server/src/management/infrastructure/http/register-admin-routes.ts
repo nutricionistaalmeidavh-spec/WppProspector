@@ -59,7 +59,7 @@ export interface AdminRoutesDeps {
   whatsappConnections?: WhatsAppConnectionManager | undefined;
   embeddedMetaSignup?: MetaEmbeddedSignup | undefined;
   automation?: AutomationStore | undefined;
-  followupsEnabled?: boolean | undefined;
+  followupsEnabled?: boolean | (() => boolean) | undefined;
   clock?: () => Date;
 }
 
