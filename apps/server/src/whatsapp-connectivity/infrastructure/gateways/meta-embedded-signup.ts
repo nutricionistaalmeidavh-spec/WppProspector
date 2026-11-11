@@ -20,10 +20,11 @@ export class MetaEmbeddedSignup {
   }
   private fingerprint(value:string):string {return createHash("sha256").update(value).digest("hex");}
   private consumeState(state:string,sessionCookie:string):void {
-    const item=this.states.get(state); this.states.delete(state);
+    const item=this.states.get(state);
     const actual=Buffer.from(this.fingerprint(sessionCookie),"hex");
     const expected=Buffer.from(item?.fingerprint??"0".repeat(64),"hex");
     if(!item||item.expires<Date.now()||!timingSafeEqual(actual,expected))throw new Error("Autorização expirada ou inválida");
+    this.states.delete(state);
   }
   private async getJson(url:URL, init?:RequestInit):Promise<Record<string,unknown>> {
     const response=await this.http(url.toString(),{...init,signal:AbortSignal.timeout(15_000),redirect:"error"});
