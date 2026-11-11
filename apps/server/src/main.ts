@@ -270,7 +270,7 @@ export const app = buildFastifyServer({
         audit: new SqliteAdminActionAudit(database, logger),
         consent: consentStore,
         automation: automationStore,
-        followupsEnabled: env.WHATSAPP_PROVIDER === "baileys",
+        followupsEnabled: () => !connections.isMetaActive(),
         prospectingEnabled: () => connections.isMetaActive(),
         diagnostics: () => connections.diagnostics(),
         whatsappConnections: connections,
