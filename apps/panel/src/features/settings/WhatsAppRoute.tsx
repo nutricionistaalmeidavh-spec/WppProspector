@@ -45,7 +45,8 @@ function loadSdk(appId:string):Promise<FacebookSdk> {
   return sdkLoading!;
 }
 
-async function signupWithMeta(config:SignupConfig):Promise<void>{
+async function signupWithMeta(config:SignupConfig,pin:string):Promise<void>{
+  if(!/^\\d{6}$/.test(pin))throw new Error("Informe um PIN de seis dígitos para registrar o número na Meta.");
   if(!config.enabled||!config.appId||!config.configId||!config.state)throw new Error("Configure o aplicativo e o Embedded Signup da Meta no servidor.");
   const sdk=await loadSdk(config.appId);
   let cleanup=()=>{};
@@ -89,11 +90,12 @@ async function signupWithMeta(config:SignupConfig):Promise<void>{
         auth_type:"rerequest",
         response_type:"code",
         override_default_response_type:true,
-        extras:{version:"v4",featureType:"whatsapp_business_app_onboarding"},
+        // Configuração Facebook Login for Business determina a versão v4.
+        extras:{setup:{}},
       });
     }catch{done(undefined,new Error("Não foi possível abrir o login da Meta."));}
   });
-  await apiFetch("/whatsapp/meta/complete",{method:"POST",body:{...details,state:config.state}});
+  await apiFetch("/whatsapp/meta/complete",{method:"POST",body:{...details,state:config.state,pin}});
 }
 
 const statusLabel=(status:string)=>status==="connected"?"Conectado":status==="qr"?"Aguardando leitura do QR":
@@ -107,12 +109,14 @@ export function WhatsAppRoute(){
   const [notice,setNotice]=useState("");
   const [error,setError]=useState("");
   const [qrVersion,setQrVersion]=useState(0);
+  const [pin,setPin]=useState("");
   if(role&&role!=="admin")return <Navigate to="/settings" replace/>;
 
   async function action(id:string,operation:()=>Promise<unknown>,success:string){
     setBusy(id);setNotice("");setError("");
     try{
       await operation();setNotice(success);
+      if(id==="signup")setPin("");
       setQrVersion(v=>v+1);
       await client.invalidateQueries({queryKey:["whatsapp","connections"]});
     }catch(e){setError(e instanceof Error?e.message:"A operação não pôde ser concluída.");}
@@ -158,10 +162,13 @@ export function WhatsAppRoute(){
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Cloud className="h-5 w-5"/> API oficial Meta</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">Conexão opcional via Embedded Signup. Tarifas e requisitos da Meta podem ser aplicáveis. Nenhum serviço pago é necessário para o modo local.</p>
-          <Button disabled={busy!==null||!snapshot?.signupEnabled}
+          <div className="space-y-1"><label htmlFor="meta-pin" className="text-sm font-medium">PIN de 6 dígitos da verificação em duas etapas</label>
+            <input id="meta-pin" className="w-full rounded-md border bg-background p-2 text-sm" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" placeholder="Crie e guarde um PIN de 6 dígitos" value={pin} onChange={e=>setPin(e.target.value.replace(/\\D/g,"").slice(0,6))}/>
+            <p className="text-xs text-muted-foreground">Necessário para registrar o número na Cloud API. Guarde esse PIN em local seguro; o CRM não o armazena.</p></div>
+          <Button disabled={busy!==null||!snapshot?.signupEnabled||pin.length!==6}
             onClick={()=>void action("signup",async()=>{
               const config=await apiFetch<SignupConfig>("/whatsapp/meta/signup");
-              await signupWithMeta(config);
+              await signupWithMeta(config,pin);
             },"Número autorizado e registrado no CRM.")}>
             <Link2 className="mr-2 h-4 w-4"/> Conectar com a Meta
           </Button>
