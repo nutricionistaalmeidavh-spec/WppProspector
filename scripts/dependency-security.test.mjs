@@ -32,7 +32,7 @@ test("o build mantém Vite corrigido sem trocar a linha major",()=>{
 
 test("o lockfile bloqueia as transições vulneráveis de dependências indiretas",()=>{
  const lock=load("package-lock.json");
- for(const [name,min] of [["brace-expansion","5.0.12"],["source-map-js","1.2.2"]]){
+ for(const [name,min] of [["brace-expansion","5.0.12"],["source-map-js","1.2.2"],["minimatch","11.0.1"]]){
   const deps=Object.entries(lock.packages).filter(([p])=>p==="node_modules/"+name || p.endsWith("/node_modules/"+name));
   assert.ok(deps.length,name+" precisa existir no lockfile");
   for(const [,meta] of deps)assert.ok(atLeast(meta.version,min),name+" "+meta.version+" ainda vulnerável");
