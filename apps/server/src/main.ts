@@ -256,7 +256,7 @@ export const app = buildFastifyServer({
     appSecret: env.META_APP_SECRET!,
     inboundJournal,
     acknowledgeInbound,
-    shouldProcess: () => connections.isMetaActive(),
+    shouldProcess: phoneNumberId => connections.acceptsMetaPhone(phoneNumberId,env.META_PHONE_NUMBER_ID),
   } : undefined,
   admin: adminConfig
     ? {
