@@ -77,13 +77,24 @@ export class WhatsAppConnectionManager implements WhatsAppGatewayPort {
   async activateMeta(id: string): Promise<void> {
     if (!this.metaStore) throw new Error("A integração oficial não está configurada.");
     if (!this.metaStore.list().some(c=>c.id===id)) throw new Error("Canal Meta não encontrado.");
-    if (this.local && !this.metaStore.active()) await this.local.stop();
-    this.metaStore.activate(id);
+    const shouldStop = !!this.local && !this.metaStore.active();
+    if (shouldStop) await this.local!.stop();
+    try { this.metaStore.activate(id); }
+    catch (error) {
+      if (shouldStop && this.inbound) await this.local!.start(this.inbound);
+      throw error;
+    }
   }
   async removeMeta(id: string): Promise<boolean> {
     if (!this.metaStore) throw new Error("A integração oficial não está configurada.");
     const wasActive = this.metaStore.list().some(c=>c.id===id && c.active);
-    if (wasActive && this.local && this.inbound) await this.local.start(this.inbound);
+    if (wasActive) {
+      this.metaStore.deactivate();
+      if (this.local && this.inbound) {
+        try { await this.local.start(this.inbound); }
+        catch (error) { this.metaStore.activate(id); throw error; }
+      }
+    }
     return this.metaStore.delete(id);
   }
   isMetaConfigured(): boolean { return this.metaStore !== null; }
