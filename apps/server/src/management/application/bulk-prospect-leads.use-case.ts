@@ -4,6 +4,7 @@ import {
   LeadBatchTooLargeError,
   LeadNotFoundError,
   ProspectingGatewayError,
+  CustomerAlreadyConvertedError,
 } from "./errors.ts";
 import { MAX_PROSPECT_BATCH, PROSPECT_CONCURRENCY } from "./lead-batch-limits.ts";
 import type { LeadRecord, LeadRepositoryPort } from "./ports/lead-repository.port.ts";
@@ -39,6 +40,7 @@ export interface BulkProspectLeadsUseCaseDeps {
 /** Traduz um erro conhecido do disparo individual para um motivo estável. */
 function reasonFor(error: unknown): string {
   if (error instanceof InvalidLeadPhoneError) return "invalid_phone";
+  if (error instanceof CustomerAlreadyConvertedError) return "customer_already_converted";
   if (error instanceof LeadNotFoundError) return "lead_not_found";
   if (error instanceof FirstContactTemplateNotConfiguredError) {
     return "first_contact_template_not_configured";
