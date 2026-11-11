@@ -204,7 +204,7 @@ export class CrmStore {
       .get(str(lead,"company")) as Row|undefined;
     const id=randomUUID(),at=this.now();
     this.db.prepare("INSERT OR IGNORE INTO crm_customers(id,lead_phone,name,company_id,created_at,updated_at) VALUES(?,?,?,?,?,?)")
-      .run(id,leadPhone,str(lead,"display_name")||leadPhone,company?.id??null,at,at);
+      .run(id,leadPhone,str(lead,"display_name")||leadPhone,company?str(company,"id"):null,at,at);
     const saved=this.db.prepare("SELECT * FROM crm_customers WHERE lead_phone=?").get(leadPhone) as Row;
     return this.customerRow(saved);
   }
