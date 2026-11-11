@@ -44,6 +44,7 @@ const webhookStatusSchema = z.object({
 
 const webhookChangeValueSchema = z.object({
   messaging_product: z.literal("whatsapp"),
+  metadata: z.object({phone_number_id:z.string(),display_phone_number:z.string().optional()}).optional(),
   messages: z.array(webhookMessageSchema).optional(),
   statuses: z.array(webhookStatusSchema).optional(),
 });
@@ -68,8 +69,8 @@ export type WebhookMessage = z.infer<typeof webhookMessageSchema>;
 export type WebhookStatus = z.infer<typeof webhookStatusSchema>;
 
 export type WebhookEvent =
-  | { type: "message"; message: WebhookMessage }
-  | { type: "status"; status: WebhookStatus }
+  | { type: "message"; message: WebhookMessage; phoneNumberId?: string }
+  | { type: "status"; status: WebhookStatus; phoneNumberId?: string }
   | { type: "unknown" };
 
 /**
@@ -86,12 +87,14 @@ export function extractWebhookEvents(payload: WebhookPayload): WebhookEvent[] {
       let recognized = false;
 
       for (const message of messages ?? []) {
-        events.push({ type: "message", message });
+        events.push({ type: "message", message,
+          ...(change.value.metadata?.phone_number_id?{phoneNumberId:change.value.metadata.phone_number_id}:{}) });
         recognized = true;
       }
 
       for (const status of statuses ?? []) {
-        events.push({ type: "status", status });
+        events.push({ type: "status", status,
+          ...(change.value.metadata?.phone_number_id?{phoneNumberId:change.value.metadata.phone_number_id}:{}) });
         recognized = true;
       }
 
