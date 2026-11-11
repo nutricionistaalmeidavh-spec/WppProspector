@@ -2,7 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { WhatsAppGatewayPort, SentMessage } from "../../application/ports/whatsapp-gateway.port.ts";
 import type { OutboundTextMessage } from "../../domain/outbound-text-message.ts";
 import type { OutboundMessage } from "../../domain/outbound-message.ts";
-import { BaileysSessionManager, type SessionFactory } from "./baileys-session-manager.ts";
+import { BaileysSessionManager } from "./baileys-session-manager.ts";
 import { MetaCloudApiGateway } from "./meta-cloud-api.gateway.ts";
 import { WhatsAppChannelStore } from "./whatsapp-channel-store.ts";
 import type { LocalInbound } from "./baileys.gateway.ts";
