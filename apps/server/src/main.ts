@@ -289,6 +289,10 @@ if (isMainModule) {
         void acknowledgeInbound(message.id).catch((error: unknown) =>
           logger.error("Falha ao confirmar evento Baileys", { error: String(error) }));
       },
+    }).catch((error: unknown) => {
+      logger.error("Gateway WhatsApp local indisponível; CRM permanece acessível", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
     for (const message of inboundJournal.pending()) {
       handleInboundMessage.execute(message);
