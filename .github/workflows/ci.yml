@@ -62,7 +62,7 @@ jobs:
             assert.equal(loadEnv({WHATSAPP_PROVIDER:'baileys'}).WHATSAPP_PROVIDER,'baileys');
             assert.equal(loadConversationEngineEnv({LLM_PROVIDER:'rules'}).LLM_PROVIDER,'rules');
             const db=new DatabaseSync(':memory:');
-            assert.deepEqual(db.prepare('SELECT 1 AS ok').get(),{ok:1});
+            assert.equal(db.prepare('SELECT 1 AS ok').get()?.ok,1);
             db.close();
             console.log('PASS: Docker self-hosted, app compilado, SQLite, Baileys e regras locais sem chaves comerciais.');
           "
