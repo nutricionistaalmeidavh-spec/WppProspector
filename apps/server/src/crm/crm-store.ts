@@ -149,6 +149,12 @@ export class CrmStore {
   hasCampaignMember(campaignId:string,phone:string):boolean{
     return Boolean(this.db.prepare("SELECT 1 FROM crm_campaign_members WHERE campaign_id=? AND lead_phone=?").get(campaignId,phone));
   }
+  listAvailableFollowups(phone:string){
+    return this.db.prepare(`SELECT id,phone,due_at AS dueAt,state,message
+      FROM automation_followups WHERE phone=? AND state IN ('pending','sending','sent')
+      ORDER BY due_at DESC LIMIT 100`).all(phone) as
+      Array<{id:string;phone:string;dueAt:string;state:string;message:string}>;
+  }
   listAssignableOperators(){
     return this.db.prepare("SELECT id,username,role FROM crm_team_users WHERE active=1 ORDER BY username LIMIT 500")
       .all() as Array<{id:string;username:string;role:"manager"|"agent"}>;
@@ -331,8 +337,15 @@ export class CrmStore {
       if(input.kind!=="WHATSAPP")throw new Error("Somente atividades WhatsApp podem vincular follow-up.");
     }
     const id=randomUUID(),at=this.now();
-    this.db.prepare("INSERT INTO crm_activities(id,opportunity_id,kind,subject,due_at,owner,owner_user_id,followup_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)")
-      .run(id,input.opportunityId,input.kind,input.subject.trim(),input.dueAt,input.owner?.trim()??"",input.ownerUserId??null,input.followupId??null,at);
+    const linked=input.followupId
+      ? this.db.prepare("SELECT state,sent_at FROM automation_followups WHERE id=?").get(input.followupId) as Row|undefined
+      : undefined;
+    const done=linked?.state==="sent";
+    this.db.prepare(`INSERT INTO crm_activities
+      (id,opportunity_id,kind,subject,due_at,owner,owner_user_id,followup_id,created_at,status,completed_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(id,input.opportunityId,input.kind,input.subject.trim(),input.dueAt,input.owner?.trim()??"",
+        input.ownerUserId??null,input.followupId??null,at,done?"DONE":"OPEN",done?(linked?.sent_at??at):null);
     return this.getActivity(id)!;
   }
   getActivity(id:string){
@@ -354,7 +367,7 @@ export class CrmStore {
     const sql=["SELECT * FROM crm_activities WHERE 1=1"],values:string[]=[];
     if(filter.status){sql.push("AND status=?");values.push(filter.status);}
     if(filter.opportunityId){sql.push("AND opportunity_id=?");values.push(filter.opportunityId);}
-    if(filter.owner){sql.push("AND owner=?");values.push(filter.owner);}
+    if(filter.owner){sql.push("AND (owner=? OR owner_user_id IN (SELECT id FROM crm_team_users WHERE username=?))");values.push(filter.owner,filter.owner);}
     sql.push("ORDER BY due_at,id LIMIT 500");
     return (this.db.prepare(sql.join(" ")).all(...values) as Row[])
       .map(row=>this.getActivity(str(row,"id"))!);
@@ -382,7 +395,9 @@ export class CrmStore {
         .sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
     };
     const today=this.now().slice(0,10);
-    const overdue=this.db.prepare("SELECT count(*) AS total FROM crm_activities WHERE status='OPEN' AND due_at < ?")
+    const overdue=this.db.prepare(`SELECT count(*) AS total FROM crm_activities a
+      LEFT JOIN automation_followups f ON f.id=a.followup_id
+      WHERE a.status='OPEN' AND substr(COALESCE(f.due_at,a.due_at),1,10) < ?`)
       .get(today) as {total:number};
     return {total:opportunities.length,won:opportunities.filter(o=>o.stage==="won").length,
       openValue:opportunities.filter(o=>o.stage!=="won"&&o.stage!=="lost").reduce((sum,o)=>sum+Number(o.effective_cents),0)/100,
