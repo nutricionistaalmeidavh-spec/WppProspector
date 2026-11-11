@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
@@ -17,7 +17,7 @@ type Summary={total:number;won:number;openValue:number;weightedValue:number;over
 type Item={description:string;quantity:string;unitPrice:string};
 const money=(n:number)=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(n);
 
-function Field({label,id,children}:{label:string;id:string;children:React.ReactNode}) {
+function Field({label,id,children}:{label:string;id:string;children:ReactNode}) {
   return <div className="min-w-0 space-y-1"><label className="block text-sm font-medium" htmlFor={id}>{label}</label>{children}</div>;
 }
 const inputClass="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm";
