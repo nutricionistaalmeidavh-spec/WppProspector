@@ -14,6 +14,7 @@ import {
   Settings,
   Target,
   UserRoundSearch,
+  UsersRound,
 } from "lucide-react";
 import type { CrmModules } from "@/features/crm/runtime";
 
@@ -47,6 +48,7 @@ export function getNavigationGroups(crm: CrmModules): NavGroup[] {
         { to: "/crm/leads", label: "Leads", icon: UserRoundSearch },
         enabled(crm.companies, { to: "/crm/companies", label: "Empresas", icon: Building2 }),
         enabled(crm.opportunities && crm.companies, { to: "/crm/commercial", label: "Comercial", icon: ClipboardList }),
+        enabled(crm.opportunities && crm.companies, { to: "/settings/team", label: "Equipe", icon: UsersRound }),
       ]),
     },
     {
