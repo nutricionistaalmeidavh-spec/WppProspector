@@ -37,3 +37,32 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run test:smoke
+
+  container:
+    name: Docker self-hosted / core R$ 0
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose with ephemeral local configuration
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+      - name: Build distributable self-hosted image
+        run: docker build --tag wppprospector:ci .
+      - name: Verify local providers, compiled app and SQLite inside image
+        run: |
+          docker run --rm --entrypoint node wppprospector:ci --input-type=module -e "
+            import assert from 'node:assert/strict';
+            import {existsSync} from 'node:fs';
+            import {DatabaseSync} from 'node:sqlite';
+            import {loadEnv} from './apps/server/dist/whatsapp-connectivity/infrastructure/config/env.js';
+            import {loadConversationEngineEnv} from './apps/server/dist/conversation-engine/infrastructure/config/env.js';
+            assert.ok(existsSync('/app/apps/server/dist/main.js'));
+            assert.ok(existsSync('/app/apps/panel/dist/index.html'));
+            assert.equal(loadEnv({WHATSAPP_PROVIDER:'baileys'}).WHATSAPP_PROVIDER,'baileys');
+            assert.equal(loadConversationEngineEnv({LLM_PROVIDER:'rules'}).LLM_PROVIDER,'rules');
+            const db=new DatabaseSync(':memory:');
+            assert.deepEqual(db.prepare('SELECT 1 AS ok').get(),{ok:1});
+            db.close();
+            console.log('PASS: Docker self-hosted, app compilado, SQLite, Baileys e regras locais sem chaves comerciais.');
+          "
