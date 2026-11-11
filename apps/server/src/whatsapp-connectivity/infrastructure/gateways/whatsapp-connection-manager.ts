@@ -70,10 +70,15 @@ export class WhatsAppConnectionManager implements WhatsAppGatewayPort {
     if (!this.local || this.metaStore?.active()) throw new Error("Ative a conexão local antes de parear.");
     await this.local.restartSession(id);
   }
+  private assertOutboxDrained(): void {
+    const row=this.db.prepare("SELECT count(*) AS n FROM outbound_jobs WHERE state IN ('pending','sending')").get() as {n:number};
+    if(Number(row.n)>0) throw new Error("Existem mensagens pendentes ou em envio. Aguarde a fila antes de trocar o número.");
+  }
   async activateLocal(id: string): Promise<void> {
     if (!this.local || !this.inbound) throw new Error("O conector local não foi instalado neste servidor.");
     if (!this.local.getSessionIds().includes(id)) throw new Error("Sessão local não configurada.");
     const wasMeta = !!this.metaStore?.active();
+    if (wasMeta || this.local.getSelectedId()!==id) this.assertOutboxDrained();
     if (wasMeta) await this.local.start(this.inbound);
     this.local.selectSession(id);
     this.metaStore?.deactivate();
@@ -82,6 +87,7 @@ export class WhatsAppConnectionManager implements WhatsAppGatewayPort {
   async activateMeta(id: string): Promise<void> {
     if (!this.metaStore) throw new Error("A integração oficial não está configurada.");
     if (!this.metaStore.list().some(c=>c.id===id)) throw new Error("Canal Meta não encontrado.");
+    if(this.metaStore.active()?.id!==id) this.assertOutboxDrained();
     const shouldStop = !!this.local && !this.metaStore.active();
     if (shouldStop) await this.local!.stop();
     try { this.metaStore.activate(id); }
@@ -94,6 +100,7 @@ export class WhatsAppConnectionManager implements WhatsAppGatewayPort {
     if (!this.metaStore) throw new Error("A integração oficial não está configurada.");
     const wasActive = this.metaStore.list().some(c=>c.id===id && c.active);
     if (wasActive) {
+      this.assertOutboxDrained();
       this.metaStore.deactivate();
       if (this.local && this.inbound) {
         try { await this.local.start(this.inbound); }
