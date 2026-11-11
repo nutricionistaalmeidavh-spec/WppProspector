@@ -33,6 +33,9 @@ import { BaileysSessionManager } from "./whatsapp-connectivity/infrastructure/ga
 import { WhatsAppChannelStore } from "./whatsapp-connectivity/infrastructure/gateways/whatsapp-channel-store.ts";
 import { WhatsAppConnectionManager } from "./whatsapp-connectivity/infrastructure/gateways/whatsapp-connection-manager.ts";
 import { MetaEmbeddedSignup } from "./whatsapp-connectivity/infrastructure/gateways/meta-embedded-signup.ts";
+import { WhatsAppChannelStore } from "./whatsapp-connectivity/infrastructure/gateways/whatsapp-channel-store.ts";
+import { WhatsAppConnectionManager } from "./whatsapp-connectivity/infrastructure/gateways/whatsapp-connection-manager.ts";
+import { MetaEmbeddedSignup } from "./whatsapp-connectivity/infrastructure/gateways/meta-embedded-signup.ts";
 import { DurableWhatsappGateway } from "./whatsapp-connectivity/infrastructure/gateways/durable-whatsapp.gateway.ts";
 import { SqliteConsentStore } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
 import { SqliteOutbox } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-outbox.ts";
@@ -245,7 +248,7 @@ const handleMessageStatusUpdate = new HandleMessageStatusUpdateUseCase(
 );
 
 const followupScheduler = new FollowupScheduler(automationStore, consentStore,
-  async ({ to, body }) => rawGateway.sendTextMessage(OutboundTextMessage.create({ to, body })));
+  async ({ to, body }) => connectionManager.sendTextMessage(OutboundTextMessage.create({ to, body })));
 
 export const app = buildFastifyServer({
   webhook: env.META_WEBHOOK_VERIFY_TOKEN && env.META_APP_SECRET && (env.WHATSAPP_PROVIDER === "meta" || embeddedMetaSignup) ? {
