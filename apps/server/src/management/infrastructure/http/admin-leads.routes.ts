@@ -7,6 +7,7 @@ import {
   LeadBatchTooLargeError,
   LeadNotFoundError,
   ProspectingGatewayError,
+  CustomerAlreadyConvertedError,
 } from "../../application/errors.ts";
 import type { ImportLeadsUseCase } from "../../application/import-leads.use-case.ts";
 import type { ProspectLeadUseCase } from "../../application/prospect-lead.use-case.ts";
@@ -66,6 +67,9 @@ function replyWithLeadError(reply: FastifyReply, error: unknown): FastifyReply {
   }
   if (error instanceof LeadNotFoundError) {
     return reply.code(404).send({ error: "lead_not_found" });
+  }
+  if (error instanceof CustomerAlreadyConvertedError) {
+    return reply.code(409).send({error:"customer_already_converted"});
   }
   if (error instanceof FirstContactTemplateNotConfiguredError) {
     return reply.code(503).send({ error: "first_contact_template_not_configured" });
