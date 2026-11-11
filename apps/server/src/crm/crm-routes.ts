@@ -25,6 +25,8 @@ const opportunityData=z.object({
   campaignId:z.string().uuid().nullable().optional(),
   source:z.string().trim().max(180).default(""),
   qualification:z.string().trim().max(180).default(""),
+  probabilityPercent:z.number().finite().min(0).max(100).default(0),
+  lossReason:z.string().trim().max(400).default(""),
 });
 // PATCH nunca deve injetar os valores padrão de POST em propriedades omitidas.
 const companyPatch=z.object({
@@ -45,7 +47,31 @@ const opportunityPatch=z.object({
   nextActionAt:z.string().max(80),
   source:z.string().trim().max(180),
   qualification:z.string().trim().max(180),
+  probabilityPercent:z.number().finite().min(0).max(100),
+  lossReason:z.string().trim().max(400),
 }).partial();
+
+const validDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>{
+  const parsed=new Date(value+"T00:00:00.000Z");
+  return !Number.isNaN(parsed.getTime())&&parsed.toISOString().slice(0,10)===value;
+},"Data inválida");
+const quoteData=z.object({
+  opportunityId:z.string().uuid(),
+  items:z.array(z.object({
+    description:z.string().trim().min(1).max(200),
+    quantity:z.number().finite().positive().max(100000),
+    unitPrice:z.number().finite().min(0).max(1e9),
+  })).min(1).max(100),
+  notes:z.string().trim().max(3000).default(""),
+});
+const activityData=z.object({
+  opportunityId:z.string().uuid(),
+  kind:z.enum(["CALL","EMAIL","WHATSAPP","MEETING","TASK"]),
+  subject:z.string().trim().min(1).max(300),
+  dueAt:validDate,
+  owner:z.string().trim().max(120).default(""),
+});
+
 function responseError(err:unknown):{status:409|422;message:string}{
   const msg=err instanceof Error?err.message:"Falha ao salvar";
   if(msg.includes("UNIQUE constraint failed"))return{status:409,message:"Registro duplicado."};
@@ -127,5 +153,50 @@ export const registerCrmRoutes:FastifyPluginAsync<{store:CrmStore}>=async(app,{s
       return reply.code(404).send({error:"Associação não encontrada"});
     return reply.code(204).send();
   });
+
+  // CRM comercial: clientes e orçamentos são locais; nenhuma rota efetua cobrança ou envio.
+  app.get("/api/crm/customers",async()=>({items:store.listCustomers()}));
+  app.post("/api/crm/customers/convert",async(req,reply)=>{
+    const parsed=z.object({leadPhone:phone}).safeParse(req.body);
+    if(!parsed.success)return reply.code(422).send({error:"Telefone inválido"});
+    try{return reply.send(store.convertLeadToCustomer(parsed.data.leadPhone));}
+    catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
+  });
+  app.get("/api/crm/quotes",async()=>({items:store.listQuotes()}));
+  app.get<{Params:{id:string}}>("/api/crm/quotes/:id",async(req,reply)=>{
+    const params=idParams.safeParse(req.params);
+    if(!params.success)return reply.code(422).send({error:"ID inválido"});
+    const quote=store.getQuote(params.data.id);
+    return quote?reply.send(quote):reply.code(404).send({error:"Orçamento não encontrado"});
+  });
+  app.post("/api/crm/quotes",async(req,reply)=>{
+    const parsed=quoteData.safeParse(req.body);
+    if(!parsed.success)return reply.code(422).send({error:"Orçamento inválido",issues:parsed.error.issues});
+    try{return reply.code(201).send(store.createQuote(parsed.data));}
+    catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
+  });
+  app.get("/api/crm/activities",async(req,reply)=>{
+    const parsed=z.object({
+      status:z.enum(["OPEN","DONE"]).optional(),
+      opportunityId:z.string().uuid().optional(),
+      owner:z.string().max(120).optional(),
+    }).safeParse(req.query);
+    if(!parsed.success)return reply.code(422).send({error:"Filtros inválidos"});
+    return reply.send({items:store.listActivities(parsed.data)});
+  });
+  app.post("/api/crm/activities",async(req,reply)=>{
+    const parsed=activityData.safeParse(req.body);
+    if(!parsed.success)return reply.code(422).send({error:"Atividade inválida",issues:parsed.error.issues});
+    try{return reply.code(201).send(store.createActivity(parsed.data));}
+    catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
+  });
+  app.post<{Params:{id:string}}>("/api/crm/activities/:id/complete",async(req,reply)=>{
+    const parsed=idParams.safeParse(req.params);
+    if(!parsed.success)return reply.code(422).send({error:"ID inválido"});
+    const saved=store.completeActivity(parsed.data.id);
+    return saved?reply.send(saved):reply.code(404).send({error:"Atividade não encontrada"});
+  });
+  app.get("/api/crm/analytics/commercial",async()=>store.commercialReport());
+
   app.get("/api/crm/analytics/conversions",async()=>store.conversionMetrics());
 };
