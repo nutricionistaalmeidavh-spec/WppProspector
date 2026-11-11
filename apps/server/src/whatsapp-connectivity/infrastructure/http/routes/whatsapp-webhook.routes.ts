@@ -21,6 +21,7 @@ export interface WhatsappWebhookRoutesDeps {
   appSecret: string;
   inboundJournal?: SqliteInboundJournal | undefined;
   acknowledgeInbound?: ((id: string) => Promise<void>) | undefined;
+  shouldProcess?: (() => boolean) | undefined;
 }
 
 export const registerWhatsappWebhookRoutes: FastifyPluginAsync<WhatsappWebhookRoutesDeps> = async (
@@ -86,6 +87,8 @@ export const registerWhatsappWebhookRoutes: FastifyPluginAsync<WhatsappWebhookRo
       return reply.code(200).send();
     }
 
+    // A troca de provedor não deve misturar eventos de uma conta Meta inativa ao canal local.
+    if(deps.shouldProcess && !deps.shouldProcess()) return reply.code(200).send();
     for (const event of extractWebhookEvents(parsed.data)) {
       if (event.type === "message") {
         // Persistir ANTES de confirmar o webhook. Erro de SQLite provoca retry HTTP da Meta.
