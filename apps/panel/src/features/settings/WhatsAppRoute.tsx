@@ -46,7 +46,7 @@ function loadSdk(appId:string):Promise<FacebookSdk> {
 }
 
 async function signupWithMeta(config:SignupConfig,pin:string):Promise<void>{
-  if(!/^\\d{6}$/.test(pin))throw new Error("Informe um PIN de seis dígitos para registrar o número na Meta.");
+  if(!/^\d{6}$/.test(pin))throw new Error("Informe um PIN de seis dígitos para registrar o número na Meta.");
   if(!config.enabled||!config.appId||!config.configId||!config.state)throw new Error("Configure o aplicativo e o Embedded Signup da Meta no servidor.");
   const sdk=await loadSdk(config.appId);
   let cleanup=()=>{};
@@ -163,7 +163,7 @@ export function WhatsAppRoute(){
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">Conexão opcional via Embedded Signup. Tarifas e requisitos da Meta podem ser aplicáveis. Nenhum serviço pago é necessário para o modo local.</p>
           <div className="space-y-1"><label htmlFor="meta-pin" className="text-sm font-medium">PIN de 6 dígitos da verificação em duas etapas</label>
-            <input id="meta-pin" className="w-full rounded-md border bg-background p-2 text-sm" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" placeholder="Crie e guarde um PIN de 6 dígitos" value={pin} onChange={e=>setPin(e.target.value.replace(/\\D/g,"").slice(0,6))}/>
+            <input id="meta-pin" className="w-full rounded-md border bg-background p-2 text-sm" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" placeholder="Crie e guarde um PIN de 6 dígitos" value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,6))}/>
             <p className="text-xs text-muted-foreground">Necessário para registrar o número na Cloud API. Guarde esse PIN em local seguro; o CRM não o armazena.</p></div>
           <Button disabled={busy!==null||!snapshot?.signupEnabled||pin.length!==6}
             onClick={()=>void action("signup",async()=>{
