@@ -22,7 +22,7 @@ O executável não possui certificado Authenticode. Não prometa ausência de al
 
 ## WhatsApp (limitação conhecida)
 
-Baileys é uma biblioteca open source **não oficial**. O conector atual imprime o QR no terminal e não dispõe de interface visual de pareamento no painel; portanto **o instalador não deve ser anunciado como pareamento completo de WhatsApp**, até adicionar fluxo de QR no painel e teste real com número autorizado. Testar primeiramente navegação, CRM e persistência local com dados fictícios. Meta e Anthropic continuam serviços opcionais, sem chaves embutidas.
+Baileys é uma biblioteca open source **não oficial**. A central **Configurações > Conexões WhatsApp** exibe o QR no painel autenticado e permite selecionar/reconectar sessões. Antes de liberar o instalador a clientes, valide manualmente o pareamento e o envio/recebimento com um número autorizado. O CRM e a persistência local são testáveis com dados fictícios sem serviços externos. A Meta Cloud API e a Anthropic permanecem **opcionais**, sem tokens embutidos; a conexão oficial exige configuração privada e aprovação junto à Meta.
 
 ## Garantias e limites
 

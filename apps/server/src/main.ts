@@ -30,6 +30,9 @@ import { SendTextMessageUseCase } from "./whatsapp-connectivity/application/use-
 import { loadEnv } from "./whatsapp-connectivity/infrastructure/config/env.ts";
 import { MetaCloudApiGateway } from "./whatsapp-connectivity/infrastructure/gateways/meta-cloud-api.gateway.ts";
 import { BaileysSessionManager } from "./whatsapp-connectivity/infrastructure/gateways/baileys-session-manager.ts";
+import { WhatsAppChannelStore } from "./whatsapp-connectivity/infrastructure/gateways/whatsapp-channel-store.ts";
+import { WhatsAppConnectionManager } from "./whatsapp-connectivity/infrastructure/gateways/whatsapp-connection-manager.ts";
+import { MetaEmbeddedSignup } from "./whatsapp-connectivity/infrastructure/gateways/meta-embedded-signup.ts";
 import { DurableWhatsappGateway } from "./whatsapp-connectivity/infrastructure/gateways/durable-whatsapp.gateway.ts";
 import { SqliteConsentStore } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
 import { SqliteOutbox } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-outbox.ts";
@@ -110,11 +113,22 @@ const outbox = new SqliteOutbox(database);
 const inboundJournal = new SqliteInboundJournal(database);
 const automationStore = new AutomationStore(database);
 const crmStore = new CrmStore(database);
-const rawGateway = env.WHATSAPP_PROVIDER === "meta"
+// O core permanece local/gratuito. Canais oficiais são um opt-in criptografado.
+const channelStore = env.WHATSAPP_CREDENTIALS_KEY
+  ? new WhatsAppChannelStore(database, env.WHATSAPP_CREDENTIALS_KEY) : null;
+const localGateway = env.WHATSAPP_PROVIDER === "baileys"
+  ? new BaileysSessionManager(env.BAILEYS_AUTH_DIR, env.BAILEYS_SESSION_IDS) : null;
+const legacyGateway = env.WHATSAPP_PROVIDER === "meta"
   ? new MetaCloudApiGateway({ accessToken: env.META_ACCESS_TOKEN!, phoneNumberId: env.META_PHONE_NUMBER_ID! })
-  : new BaileysSessionManager(env.BAILEYS_AUTH_DIR, env.BAILEYS_SESSION_IDS);
+  : localGateway!;
+const connections = new WhatsAppConnectionManager(database, legacyGateway, channelStore, localGateway);
+const embeddedMetaSignup = env.META_APP_ID && env.META_CONFIG_ID && env.META_APP_SECRET &&
+  env.META_WEBHOOK_VERIFY_TOKEN && channelStore
+  ? new MetaEmbeddedSignup({ appId: env.META_APP_ID, configId: env.META_CONFIG_ID,
+      appSecret: env.META_APP_SECRET }, channelStore) : undefined;
+const rawGateway = connections;
 const gateway = new DurableWhatsappGateway(rawGateway, outbox, consentStore,
-  () => !(rawGateway instanceof BaileysSessionManager) || rawGateway.diagnostic().status === "connected");
+  () => connections.diagnostics().provider === "meta" || connections.diagnostics().status === "connected");
 export const sendOutboundMessage = new SendOutboundMessageUseCase(gateway);
 export const sendTextMessage = new SendTextMessageUseCase(gateway);
 
@@ -222,7 +236,7 @@ async function acknowledgeInbound(id: string): Promise<void> {
 // Registro append-only das janelas de conversa de 24 h faturáveis (fonte
 // WhatsApp da capability `consumption-metrics`). Best-effort; desligado por
 // config, usa o recorder no-op e o tratamento de status opera como sem a feature.
-const messagingCostRecorder = env.WHATSAPP_PROVIDER === "meta" && env.WHATSAPP_COST_TRACKING_ENABLED
+const messagingCostRecorder = (env.WHATSAPP_PROVIDER === "meta" || !!embeddedMetaSignup) && env.WHATSAPP_COST_TRACKING_ENABLED
   ? new SqliteMessagingCostRecorder(database, logger, env.WHATSAPP_BILLING_COUNTRY)
   : new NoopMessagingCostRecorder();
 const handleMessageStatusUpdate = new HandleMessageStatusUpdateUseCase(
@@ -231,10 +245,10 @@ const handleMessageStatusUpdate = new HandleMessageStatusUpdateUseCase(
 );
 
 const followupScheduler = new FollowupScheduler(automationStore, consentStore,
-  async ({ to, body }) => rawGateway.sendTextMessage(OutboundTextMessage.create({ to, body })));
+  async ({ to, body }) => connections.sendTextMessage(OutboundTextMessage.create({ to, body })));
 
 export const app = buildFastifyServer({
-  webhook: env.WHATSAPP_PROVIDER === "meta" ? {
+  webhook: env.META_WEBHOOK_VERIFY_TOKEN && env.META_APP_SECRET && (env.WHATSAPP_PROVIDER === "meta" || embeddedMetaSignup) ? {
     handleInboundMessage,
     handleMessageStatusUpdate,
     logger,
@@ -242,6 +256,7 @@ export const app = buildFastifyServer({
     appSecret: env.META_APP_SECRET!,
     inboundJournal,
     acknowledgeInbound,
+    shouldProcess: phoneNumberId => connections.acceptsMetaPhone(phoneNumberId,env.META_PHONE_NUMBER_ID),
   } : undefined,
   admin: adminConfig
     ? {
@@ -255,9 +270,11 @@ export const app = buildFastifyServer({
         audit: new SqliteAdminActionAudit(database, logger),
         consent: consentStore,
         automation: automationStore,
-        followupsEnabled: env.WHATSAPP_PROVIDER === "baileys",
-        prospectingEnabled: env.WHATSAPP_PROVIDER === "meta",
-        diagnostics: () => rawGateway instanceof BaileysSessionManager ? rawGateway.diagnostic() : { provider: "meta", status: "configured", qrAvailable: false },
+        followupsEnabled: () => !connections.isMetaActive(),
+        prospectingEnabled: () => connections.isMetaActive(),
+        diagnostics: () => connections.diagnostics(),
+        whatsappConnections: connections,
+        embeddedMetaSignup,
         logger,
       }
     : undefined,
@@ -282,7 +299,7 @@ if (isMainModule) {
         error: error instanceof Error ? error.message : String(error),
       }),
     );
-    if (rawGateway instanceof BaileysSessionManager) await rawGateway.start({
+    await connections.start({
       execute(message) {
         inboundJournal.record(message);
         handleInboundMessage.execute(message);
@@ -301,13 +318,13 @@ if (isMainModule) {
     outbox.recoverStale();
     automationStore.recoverStale();
     await gateway.retryPending();
-    if (env.WHATSAPP_PROVIDER === "baileys") await followupScheduler.runDue();
+    if (!connections.isMetaActive()) await followupScheduler.runDue();
     const retryTimer = setInterval(() => {
       void gateway.retryPending().catch((e: unknown) => logger.error("Falha na outbox", { error: String(e) }));
     }, 30_000);
     retryTimer.unref?.();
     const followupTimer = setInterval(() => {
-      if (env.WHATSAPP_PROVIDER === "baileys") void followupScheduler.runDue().catch((e: unknown) =>
+      if (!connections.isMetaActive()) void followupScheduler.runDue().catch((e: unknown) =>
         logger.error("Falha ao processar follow-ups", { error: String(e) }));
     }, 30_000);
     followupTimer.unref?.();

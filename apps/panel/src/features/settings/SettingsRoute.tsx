@@ -1,4 +1,5 @@
 import { Bot, CheckCircle2, CircleDashed, MessageSquare, UploadCloud } from "lucide-react";
+import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusPill } from "@/components/StatusPill";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,7 @@ export function SettingsRoute() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Sistema" title="Configurações" description="Estado das integrações que a interface consegue consumir neste deploy." />
+      <Link to="/settings/whatsapp" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Gerenciar conexões WhatsApp</Link>
       <Card className="max-w-3xl shadow-sm">
         <CardHeader><CardTitle className="text-base">Capabilities</CardTitle></CardHeader>
         <CardContent className="divide-y p-0">

@@ -5,7 +5,7 @@ import { AutomationStore, followupInputSchema, ruleInputSchema } from "./automat
 
 const idSchema = z.object({ id: z.string().uuid() });
 export const registerAutomationRoutes: FastifyPluginAsync<{
-  automation: AutomationStore; consent: SqliteConsentStore; followupsEnabled: boolean;
+  automation: AutomationStore; consent: SqliteConsentStore; followupsEnabled: boolean | (() => boolean);
 }> = async (app,{automation,consent,followupsEnabled}) => {
   app.get("/api/automations/rules", async () => ({ items:automation.listRules() }));
 
@@ -28,9 +28,9 @@ export const registerAutomationRoutes: FastifyPluginAsync<{
     return reply.code(204).send();
   });
 
-  app.get("/api/automations/followups", async()=>({items:automation.listFollowups(),enabled:followupsEnabled}));
+  app.get("/api/automations/followups", async()=>({items:automation.listFollowups(),enabled:typeof followupsEnabled === "function" ? followupsEnabled() : followupsEnabled}));
   app.post("/api/automations/followups", async(req,reply)=>{
-    if(!followupsEnabled)return reply.code(409).send({error:"Agendamentos de texto requerem conector local; API oficial usa templates aprovados."});
+    if(!(typeof followupsEnabled === "function" ? followupsEnabled() : followupsEnabled))return reply.code(409).send({error:"Agendamentos de texto requerem conector local; API oficial usa templates aprovados."});
     const body=followupInputSchema.safeParse(req.body);
     if(!body.success)return reply.code(422).send({error:"Follow-up inválido",issues:body.error.issues});
     const due=new Date(body.data.dueAt).getTime(),now=Date.now();

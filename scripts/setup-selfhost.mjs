@@ -8,7 +8,7 @@ const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const secureHex=()=>randomBytes(32).toString("hex");
 
 /** Pure renderer: credentials are generated only locally, never written into source. */
-export function renderLocalEnv(template,{access,session}){
+export function renderLocalEnv(template,{access,session,credentials}){
   if(!access||!session||access===session)throw new Error("Segredos distintos são obrigatórios.");
   let output=template;
   const set=(key,value)=>{
@@ -20,6 +20,7 @@ export function renderLocalEnv(template,{access,session}){
   set("LLM_PROVIDER","rules");
   set("ADMIN_ACCESS_SECRET",access);
   set("ADMIN_SESSION_SECRET",session);
+  if(credentials) set("WHATSAPP_CREDENTIALS_KEY",credentials);
   set("HOST","127.0.0.1");
   set("META_ACCESS_TOKEN","");
   set("ANTHROPIC_API_KEY","");
@@ -37,7 +38,7 @@ export function setupSelfhost(){
   const env=join(root,".env");
   if(!existsSync(env)){
     const template=readFileSync(join(root,".env.example"),"utf8");
-    writeFileSync(env,renderLocalEnv(template,{access:secureHex(),session:secureHex()}),
+    writeFileSync(env,renderLocalEnv(template,{access:secureHex(),session:secureHex(),credentials:secureHex()}),
       {mode:0o600,flag:"wx"});
     console.info("Arquivo .env local criado com segredos aleatórios. Não o compartilhe.");
   }else console.info("Arquivo .env existente preservado sem alterações.");

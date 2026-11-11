@@ -48,7 +48,8 @@ export function createAdminSessionGuard(deps: {
     // O segredo administrativo legado mantém o papel admin; contas da equipe são limitadas.
     if(!userId)return;
     const apiPath=path.slice(path.indexOf("/api/"));
-    if(apiPath.startsWith("/api/team/"))return reply.code(403).send({error:"forbidden"});
+    if(apiPath.startsWith("/api/team/") || apiPath.startsWith("/api/whatsapp/"))
+      return reply.code(403).send({error:"forbidden"});
     const write=!["GET","HEAD","OPTIONS"].includes(request.method);
     if(!write||apiPath==="/api/session")return;
     if(role==="manager")return;

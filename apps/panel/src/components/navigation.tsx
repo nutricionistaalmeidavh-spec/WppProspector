@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Megaphone,
   MessageSquareWarning,
+  Smartphone,
   Settings,
   Target,
   UserRoundSearch,
@@ -71,7 +72,10 @@ export function getNavigationGroups(crm: CrmModules, role:"admin"|"manager"|"age
     },
     {
       label: "",
-      items: [{ to: "/settings", label: "Configurações", icon: Settings }],
+      items: compact([
+        { to: "/settings", label: "Configurações", icon: Settings },
+        enabled(role==="admin", { to: "/settings/whatsapp", label: "Conexões WhatsApp", icon: Smartphone }),
+      ]),
     },
   ].filter((group) => group.items.length > 0);
 }

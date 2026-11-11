@@ -33,6 +33,9 @@ import { CrmStore } from "../../../crm/crm-store.ts";
 import { registerCrmRoutes } from "../../../crm/crm-routes.ts";
 import { TeamStore } from "../../../team/team-store.ts";
 import { registerTeamRoutes } from "../../../team/team.routes.ts";
+import { registerWhatsAppConnectionsRoutes } from "../../../whatsapp-connectivity/infrastructure/http/routes/whatsapp-connections.routes.ts";
+import type { WhatsAppConnectionManager } from "../../../whatsapp-connectivity/infrastructure/gateways/whatsapp-connection-manager.ts";
+import type { MetaEmbeddedSignup } from "../../../whatsapp-connectivity/infrastructure/gateways/meta-embedded-signup.ts";
 
 export interface AdminRoutesDeps {
   config: ResolvedAdminConfig;
@@ -52,9 +55,11 @@ export interface AdminRoutesDeps {
   logger: Logger;
   consent?: SqliteConsentStore | undefined;
   diagnostics?: (() => { provider: string; status: string; qrAvailable: boolean }) | undefined;
-  prospectingEnabled?: boolean | undefined;
+  prospectingEnabled?: boolean | (() => boolean) | undefined;
+  whatsappConnections?: WhatsAppConnectionManager | undefined;
+  embeddedMetaSignup?: MetaEmbeddedSignup | undefined;
   automation?: AutomationStore | undefined;
-  followupsEnabled?: boolean | undefined;
+  followupsEnabled?: boolean | (() => boolean) | undefined;
   clock?: () => Date;
 }
 
@@ -119,6 +124,7 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
     repository: deps.repository,
   });
   await app.register(registerAdminConversationActionsRoutes, { conversationActions });
+  const prospectingAllowed=()=>typeof deps.prospectingEnabled==="function"?deps.prospectingEnabled():deps.prospectingEnabled??true;
   await app.register(registerAdminLeadsRoutes, {
     registerLead,
     prospectLead,
@@ -126,20 +132,24 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
     bulkProspect,
     resetLead,
     leads: deps.leads,
+    prospectingEnabled: prospectingAllowed,
   });
   await app.register(registerAdminCapabilitiesRoutes, {
     conversationActions: true,
-    prospecting: deps.prospectingEnabled ?? true,
+    prospecting: prospectingAllowed,
     crm: { opportunities: true, companies: true, campaigns: true },
   });
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
-  await app.register(registerCrmRoutes, { store: new CrmStore(deps.db),prospectLead,prospectingEnabled:deps.prospectingEnabled??true });
+  await app.register(registerCrmRoutes, { store: new CrmStore(deps.db),prospectLead,prospectingEnabled:prospectingAllowed });
   await app.register(registerTeamRoutes,{store:team});
   if (deps.consent) await app.register(registerConsentRoutes, { consent: deps.consent });
   if (deps.automation && deps.consent) await app.register(registerAutomationRoutes, {
     automation: deps.automation, consent: deps.consent, followupsEnabled: deps.followupsEnabled ?? false,
   });
   if (deps.diagnostics) app.get("/api/connection", async () => deps.diagnostics!());
+  if (deps.whatsappConnections) await app.register(registerWhatsAppConnectionsRoutes, {
+    manager: deps.whatsappConnections, signup: deps.embeddedMetaSignup,
+  });
 
   await applyAdminStatic(app, { webDistDir: deps.config.webDistDir, logger: deps.logger });
 };

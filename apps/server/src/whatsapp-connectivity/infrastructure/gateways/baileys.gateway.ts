@@ -17,7 +17,6 @@ type BaileysModule = {
   fetchLatestBaileysVersion: () => Promise<{ version: number[] }>;
   DisconnectReason: { loggedOut: number };
 };
-type QrcodeModule = { generate(text: string, opts: { small: boolean }): void };
 
 export interface LocalInbound {
   execute(message: { from: string; id: string; timestamp: string; type: "text"; text: { body: string } }): void;
@@ -43,6 +42,9 @@ export class BaileysGateway implements WhatsAppGatewayPort {
     return { status: this.status, qrAvailable: this.qr !== null, provider: "baileys" };
   }
 
+  /** QR efêmero, exposto somente através de rota administrativa autenticada. */
+  qrPayload(): string | null { return this.status === "qr" ? this.qr : null; }
+
   async start(inbound: LocalInbound): Promise<void> {
     this.inbound = inbound;
     this.shouldReconnect = true;
@@ -56,6 +58,7 @@ export class BaileysGateway implements WhatsAppGatewayPort {
     this.sock = undefined;
     this.connected = false;
     this.status = "disconnected";
+    this.qr = null;
   }
 
   private async connect(): Promise<void> {
@@ -80,9 +83,7 @@ export class BaileysGateway implements WhatsAppGatewayPort {
       if (update.qr) {
         this.qr = update.qr;
         this.status = "qr";
-        const qrPackage = "qrcode-terminal";
-        void import(qrPackage).then((m: unknown) => (m as { default: QrcodeModule }).default.generate(update.qr!, { small: true }))
-          .catch(() => console.info("QR disponível; instale o pacote opcional qrcode-terminal para exibí-lo no terminal."));
+        // QR efêmero é servido somente à sessão administrativa autenticada; não registrar em logs.
       }
       if (update.connection === "open") {
         this.connected = true; this.qr = null; this.retries = 0; this.status = "connected";
