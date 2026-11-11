@@ -20,16 +20,19 @@ describe("Embedded Signup seguro", () => {
     const fetcher=vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({access_token:"private-access-token"}),{status:200}))
       .mockResolvedValueOnce(new Response(JSON.stringify({data:[{id:"333",display_phone_number:"+55 16 9999",verified_name:"Teste"}]}),{status:200}))
+      .mockResolvedValueOnce(new Response(JSON.stringify({success:true}),{status:200}))
       .mockResolvedValueOnce(new Response(JSON.stringify({success:true}),{status:200}));
     const {db,store,signup}=setup(fetcher);
     const state=signup.createState("valid-cookie");
-    await expect(signup.complete({state,sessionCookie:"another-cookie",code:"code",wabaId:"222",phoneNumberId:"333"})).rejects.toThrow();
-    const result=await signup.complete({state,sessionCookie:"valid-cookie",code:"code",wabaId:"222",phoneNumberId:"333"});
+    await expect(signup.complete({state,sessionCookie:"another-cookie",code:"code",wabaId:"222",phoneNumberId:"333",pin:"123456"})).rejects.toThrow();
+    const result=await signup.complete({state,sessionCookie:"valid-cookie",code:"code",wabaId:"222",phoneNumberId:"333",pin:"123456"});
     expect(result.phoneNumberId).toBe("333");
     expect(JSON.stringify(store.list())).not.toContain("private-access-token");
     expect(JSON.stringify(db.prepare("SELECT * FROM whatsapp_channels").all())).not.toContain("private-access-token");
-    expect(fetcher).toHaveBeenCalledTimes(3);
-    await expect(signup.complete({state,sessionCookie:"valid-cookie",code:"code",wabaId:"222",phoneNumberId:"333"})).rejects.toThrow();
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(String(fetcher.mock.calls[3]?.[0])).toContain("/333/register");
+    expect(String(fetcher.mock.calls[3]?.[1]?.body)).toContain('"pin":"123456"');
+    await expect(signup.complete({state,sessionCookie:"valid-cookie",code:"code",wabaId:"222",phoneNumberId:"333",pin:"123456"})).rejects.toThrow();
     db.close();
   });
   it("recusa telefone que não pertence ao WABA autorizado", async () => {
@@ -37,7 +40,7 @@ describe("Embedded Signup seguro", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({access_token:"private-access-token"}),{status:200}))
       .mockResolvedValueOnce(new Response(JSON.stringify({data:[{id:"other"}]}),{status:200}));
     const {db,store,signup}=setup(fetcher);
-    await expect(signup.complete({state:signup.createState("cookie"),sessionCookie:"cookie",code:"code",wabaId:"222",phoneNumberId:"333"})).rejects.toThrow(/não pertence/);
+    await expect(signup.complete({state:signup.createState("cookie"),sessionCookie:"cookie",code:"code",wabaId:"222",phoneNumberId:"333",pin:"123456"})).rejects.toThrow(/não pertence/);
     expect(store.list()).toHaveLength(0);
     db.close();
   });
