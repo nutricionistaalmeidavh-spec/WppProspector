@@ -129,12 +129,12 @@ export class CrmStore {
       owner=?,next_action=?,next_action_at=?,campaign_id=?,source=?,qualification=?,updated_at=?,won_at=? WHERE id=?`)
         .run(patch.title??str(old,"title"),companyId,leadPhone,stage,
           patch.estimatedValue===undefined?Number(old.estimated_cents):Math.round(patch.estimatedValue*100),
-          patch.owner??str(old,"owner"),patch.nextAction??str(old,"next_action"),
+          patch.owner??(patch.ownerUserId===null?"":str(old,"owner")),patch.nextAction??str(old,"next_action"),
           patch.nextActionAt??str(old,"next_action_at"),campaignId??null,
           patch.source??str(old,"source"),patch.qualification??str(old,"qualification"),at,wonAt??null,id);
       this.db.prepare("UPDATE crm_opportunities SET probability_percent=?,loss_reason=?,owner_user_id=? WHERE id=?")
         .run(patch.probabilityPercent??Number(old.probability_percent??0),patch.lossReason??str(old,"loss_reason"),
-          patch.ownerUserId===undefined?(old.owner_user_id??null):patch.ownerUserId,id);
+          patch.ownerUserId===undefined?(old.owner_user_id==null?null:String(old.owner_user_id)):patch.ownerUserId,id);
       if(stage!==old.stage)this.db.prepare("INSERT INTO crm_stage_events(id,opportunity_id,from_stage,to_stage,occurred_at) VALUES(?,?,?,?,?)")
         .run(randomUUID(),id,old.stage as string,stage,at);
       this.db.exec("COMMIT");
@@ -345,7 +345,7 @@ export class CrmStore {
       (id,opportunity_id,kind,subject,due_at,owner,owner_user_id,followup_id,created_at,status,completed_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
       .run(id,input.opportunityId,input.kind,input.subject.trim(),input.dueAt,input.owner?.trim()??"",
-        input.ownerUserId??null,input.followupId??null,at,done?"DONE":"OPEN",done?(linked?.sent_at??at):null);
+        input.ownerUserId??null,input.followupId??null,at,done?"DONE":"OPEN",done?(linked?.sent_at==null?at:String(linked.sent_at)):null);
     return this.getActivity(id)!;
   }
   getActivity(id:string){
