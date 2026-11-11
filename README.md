@@ -71,3 +71,46 @@ npm run test:smoke
 `check` executa sincronização de contratos, lint, typecheck, testes e build. `test:smoke` exige o build e valida HTTP/persistência com dados temporários, sem mensagens ou chamadas externas. GitHub Actions está disponível apenas por acionamento manual.
 
 Veja [origens, ajustes e validação](docs/integration-delivery.md). As telas que já dependiam de capabilities continuam respeitando o suporte do servidor; esta entrega não cria módulos novos nem remove integrações. As chamadas reais Meta/Anthropic só podem ser confirmadas com suas credenciais no ambiente final.
+
+
+## CRM comercial (local, sem serviços pagos)
+
+O painel em \`/admin/crm/commercial\` permite converter leads em clientes comerciais
+sem alterar a base de prospecção, criar propostas locais com itens, registrar e concluir
+tarefas e visualizar indicadores por origem e responsável. O pipeline possui
+drag-and-drop no desktop e seletor acessível no celular. O banco aplica migrations
+aditivas automaticamente; não substitui nem apaga conversas, histórico ou oportunidades.
+
+Orçamentos são apenas propostas internas; não geram cobranças, notas fiscais
+nem mensagens automáticas. Serviços pagos só são habilitados por configuração explícita.
+
+### Instalação do core R$ 0
+
+Com Node.js 24+ instalado:
+
+\`\`\`bash
+npm run setup:selfhost
+npm start
+\`\`\`
+
+O setup cria \`.env\` com dois segredos aleatórios somente se não houver um
+arquivo existente, instala dependências locais e compila o painel. Não exibe as
+senhas geradas no terminal; guarde o conteúdo localmente em local seguro.
+Acesse \`http://localhost:3000/admin/\`, usando o valor local de
+\`ADMIN_ACCESS_SECRET\`. O conector Baileys é não oficial e requer pareamento
+manual via QR. O modo de envio proativo usando templates pertence à API Meta,
+que é **opcional e pode ser cobrada**.
+
+Alternativamente, depois de gerar o \`.env\`:
+
+\`\`\`bash
+docker compose up --build -d
+\`\`\`
+
+O Compose expõe o painel apenas no loopback \`127.0.0.1\` e persiste o banco,
+conversas e sessões em volume separado. Para acesso remoto, use HTTPS e rede
+privada; não publique o painel administrativo diretamente na internet.
+
+Consulte [gate de comercialização](docs/COMMERCIAL-RELEASE.md), [licença](LICENSE)
+e [avisos de proveniência](NOTICE.md). Não distribua \`.env\`, banco, sessões ou
+dados de clientes reais em pacotes de código-fonte.
