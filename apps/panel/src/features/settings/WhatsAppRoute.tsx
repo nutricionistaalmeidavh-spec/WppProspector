@@ -106,6 +106,21 @@ export function WhatsAppRoute(){
   const client=useQueryClient();
   const result=useQuery({queryKey:["whatsapp","connections"],queryFn:()=>apiFetch<Connections>("/whatsapp/connections"),
     retry:false,refetchInterval:5000,enabled:role==="admin"});
+  const snapshot=result.data;
+  const signupConfig=useQuery({
+    queryKey:["whatsapp","signup-config"],
+    queryFn:()=>apiFetch<SignupConfig>("/whatsapp/meta/signup"),
+    enabled:role==="admin" && snapshot?.signupEnabled===true,
+    retry:false,staleTime:30_000,
+  });
+  const [facebookReady,setFacebookReady]=useState(false);
+  useEffect(()=>{
+    const appId=signupConfig.data?.appId;
+    if(!appId)return;
+    let active=true;
+    void loadSdk(appId).then(()=>{if(active)setFacebookReady(true);}).catch(()=>{if(active)setFacebookReady(false);});
+    return ()=>{active=false;};
+  },[signupConfig.data?.appId]);
   const [busy,setBusy]=useState<string|null>(null);
   const [notice,setNotice]=useState("");
   const [error,setError]=useState("");
