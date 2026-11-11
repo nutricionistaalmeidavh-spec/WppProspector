@@ -42,7 +42,7 @@ const ids = [
   ['hub','hub','Hub de Gestão','base'],
   ['artisys-finance','financeiro','Financeiro','extra'],
   ['universidade','treinamentos','Treinamentos','extra'],
-  ['jogos','gamificacao','Gamificação','extra'],
+  ['jogos','jogos','Gamificação','extra'],
   ['assistente','assistente','Assistente Digital','extra'],
 ];
 const pricing = '# Política comercial demonstrativa\n\nNenhum preço ou plano está configurado neste exemplo. Personalize esta base antes de atender clientes reais. Na ausência de tabela aprovada, encaminhe o contato a um humano. Nunca invente valores.\n';
