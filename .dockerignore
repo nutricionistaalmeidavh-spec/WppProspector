@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+**/dist
+**/coverage
+.git
+.env
+.env.*
+!.env.example
+**/data
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+*.log
+.tmp
+.temp
