@@ -45,6 +45,8 @@ describe("CRM comercial persistente — sem dependências pagas", () => {
       expect(first.id).toBe(second.id);
       expect(first.customerId).toBe(customer.id);
       expect(first.totalCents).toBe(49990);
+      expect(store.getOpportunity(opportunity.id)?.stage).toBe("proposal");
+      expect(store.getOpportunityHistory(opportunity.id).map(x=>x.toStage)).toEqual(["new","proposal"]);
       expect(store.getQuote(first.id)?.items).toHaveLength(1);
       expect(db.prepare("SELECT COUNT(*) AS n FROM crm_quotes").get()).toMatchObject({ n: 1 });
     } finally { db.close(); }
