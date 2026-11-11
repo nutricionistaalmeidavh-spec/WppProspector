@@ -16,7 +16,7 @@ export class HandleInboundMessageUseCase {
     private readonly logger: Logger,
     private readonly inboundMessagePort: InboundMessagePort,
     private readonly consent?: { processInbound(phone: string, text: string): boolean },
-    private readonly onInbound?: (phone: string) => void,
+    private readonly onInbound?: (phone: string,text:string,messageId:string,receivedAt:Date) => void,
   ) {}
 
   execute(raw: RawInboundMessage): void {
@@ -41,7 +41,7 @@ export class HandleInboundMessageUseCase {
       timestamp: message.timestamp.toISOString(),
     });
     const normalizedPhone = `+${message.from.replace(/\D/g, "")}`;
-    this.onInbound?.(normalizedPhone);
+    this.onInbound?.(normalizedPhone,message.text,message.messageId,message.timestamp);
     if (this.consent?.processInbound(normalizedPhone, message.text)) return;
 
     try {
