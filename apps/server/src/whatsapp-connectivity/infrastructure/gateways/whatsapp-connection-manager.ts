@@ -30,6 +30,11 @@ export class WhatsAppConnectionManager implements WhatsAppGatewayPort {
     if (this.local && !this.metaStore?.active()) await this.local.start(inbound);
   }
   isMetaActive(): boolean { return !!this.metaStore?.active() || !this.local; }
+  acceptsMetaPhone(phoneNumberId?:string,legacyPhoneId?:string):boolean {
+    const active=this.metaStore?.active();
+    if(active)return phoneNumberId===active.phoneNumberId;
+    return !this.local && (!phoneNumberId || phoneNumberId===legacyPhoneId);
+  }
   private gateway(): WhatsAppGatewayPort {
     const meta = this.metaStore?.active();
     return meta
