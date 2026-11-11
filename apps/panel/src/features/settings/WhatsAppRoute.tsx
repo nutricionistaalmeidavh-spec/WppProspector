@@ -27,7 +27,7 @@ let sdkLoading:Promise<FacebookSdk>|undefined;
 function loadSdk(appId:string):Promise<FacebookSdk> {
   if(window.FB){window.FB.init({appId,cookie:true,xfbml:false,version:"v26.0"});return Promise.resolve(window.FB);}
   if(sdkLoading)return sdkLoading;
-  sdkLoading=new Promise((resolve,reject)=>{
+  sdkLoading=new Promise<FacebookSdk>((resolve,reject)=>{
     const timeout=window.setTimeout(()=>reject(new Error("A biblioteca da Meta não carregou.")),15000);
     window.fbAsyncInit=()=>{
       window.clearTimeout(timeout);
@@ -42,7 +42,7 @@ function loadSdk(appId:string):Promise<FacebookSdk> {
     script.onerror=()=>{window.clearTimeout(timeout);reject(new Error("Falha ao carregar o login da Meta."));};
     document.head.appendChild(script);
   }).catch(err=>{sdkLoading=undefined;throw err;});
-  return sdkLoading;
+  return sdkLoading!;
 }
 
 async function signupWithMeta(config:SignupConfig):Promise<void>{
