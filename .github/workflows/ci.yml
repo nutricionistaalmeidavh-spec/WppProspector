@@ -29,6 +29,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Enforce zero known npm advisories (including dev tools)
+        run: npm audit --audit-level=moderate
+
       - name: Verify shared contracts are synchronized
         run: npm run check:contracts
 
