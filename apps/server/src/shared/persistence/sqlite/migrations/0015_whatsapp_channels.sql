@@ -13,3 +13,5 @@ CREATE TABLE IF NOT EXISTS whatsapp_channels (
   updated_at TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_one_active_meta ON whatsapp_channels(active) WHERE active=1;
+
+CREATE TABLE IF NOT EXISTS whatsapp_connection_preferences (key TEXT PRIMARY KEY,value TEXT NOT NULL);
