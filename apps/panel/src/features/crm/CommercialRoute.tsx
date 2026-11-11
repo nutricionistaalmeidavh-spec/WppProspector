@@ -160,7 +160,7 @@ export function CommercialRoute() {
           <p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-xl font-semibold">{value}</p>
         </div>)}
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <section className={card}><h2 className="font-semibold">Clientes convertidos ({customers.data?.items.length??0})</h2>
           <div className="space-y-2 text-sm">{(customers.data?.items??[]).map(customer=>
             <p key={customer.id} className="rounded-lg border p-2">{customer.name} · {customer.leadPhone}</p>)}</div>
@@ -169,6 +169,12 @@ export function CommercialRoute() {
           <p className="text-xs text-muted-foreground">Pipeline ponderado: {money(summary.data?.weightedValue??0)}</p>
           {(summary.data?.byOwner??[]).map(row=><div className="flex justify-between gap-2 text-sm" key={row.name}>
             <span>{row.name}</span><span>{row.total} oportunidades · {row.won} ganhos</span>
+          </div>)}
+        </section>
+        <section className={card}><h2 className="font-semibold">Resultados por origem</h2>
+          <p className="text-xs text-muted-foreground">Fonte informada em cada oportunidade, sem atribuição automática de campanha.</p>
+          {(summary.data?.bySource??[]).map(row=><div className="flex justify-between gap-2 text-sm" key={row.name}>
+            <span>{row.name}</span><span>{row.total} negócios · {row.won} ganhos</span>
           </div>)}
         </section>
       </div>
