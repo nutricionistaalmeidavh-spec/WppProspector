@@ -95,7 +95,7 @@ export class BaileysSessionManager implements WhatsAppGatewayPort {
   }
 
   async sendTextMessage(message: OutboundTextMessage): Promise<SentMessage> {
-    const primary = this.sessions.get(this.ids[0]!);
+    const primary = this.sessions.get(this.selectedId);
     if (!primary) throw new Error("Sessão principal do WhatsApp não inicializada.");
     return primary.sendTextMessage(message);
   }
