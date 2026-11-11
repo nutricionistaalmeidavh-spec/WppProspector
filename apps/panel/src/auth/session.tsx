@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { onSessionLost } from "@/api/client";
-import { createSession, deleteSession, getOverview } from "@/api/endpoints";
+import { createSession, createTeamSession, deleteSession, getOverview } from "@/api/endpoints";
 import { queryClient } from "@/api/query-client";
 
 export type SessionStatus = "checking" | "authenticated" | "anonymous";
@@ -17,6 +17,7 @@ interface SessionContextValue {
   status: SessionStatus;
   /** Troca o segredo por um cookie de sessão. Rejeita (ApiError 401) no segredo errado. */
   login: (secret: string) => Promise<void>;
+  loginTeam: (username:string,password:string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -57,6 +58,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setStatus("authenticated");
   }, []);
 
+  const loginTeam=useCallback(async(username:string,password:string)=>{
+    await createTeamSession(username,password);
+    await queryClient.invalidateQueries();
+    setStatus("authenticated");
+  },[]);
+
   const logout = useCallback(async () => {
     try {
       await deleteSession();
@@ -67,8 +74,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<SessionContextValue>(
-    () => ({ status, login, logout }),
-    [status, login, logout],
+    () => ({ status, login, loginTeam, logout }),
+    [status, login, loginTeam, logout],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
