@@ -13,7 +13,7 @@ describe("CRM team admin RBAC",()=>{
       const login=await h.app.inject({method:"POST",url:"/admin/api/session",
         payload:{username:"operador",password:"SenhaForte!2026"}});
       expect(login.statusCode).toBe(200);
-      const raw=login.headers["set-cookie"],agent=(Array.isArray(raw)?raw[0]:String(raw)).split(";")[0]!;
+      const raw=login.headers["set-cookie"],agent=(Array.isArray(raw)?(raw[0]??""):String(raw)).split(";")[0]!;
       expect((await h.app.inject({method:"GET",url:"/admin/api/crm/companies",headers:{cookie:agent}})).statusCode).toBe(200);
       expect((await h.app.inject({method:"GET",url:"/admin/api/team/users",headers:{cookie:agent}})).statusCode).toBe(403);
       expect((await h.app.inject({method:"POST",url:"/admin/api/leads/prospect",headers:{cookie:agent},payload:{phones:[]}})).statusCode).toBe(403);
