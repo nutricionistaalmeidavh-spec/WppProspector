@@ -85,7 +85,7 @@ function responseError(err:unknown):{status:409|422;message:string}{
   return{status:422,message:msg};
 }
 export const registerCrmRoutes:FastifyPluginAsync<{
-  store:CrmStore;prospectLead?:ProspectLeadUseCase;prospectingEnabled?:boolean;
+  store:CrmStore;prospectLead?:ProspectLeadUseCase;prospectingEnabled?:boolean | (() => boolean);
 }>=async(app,{store,prospectLead,prospectingEnabled})=>{
   app.get("/api/crm/companies",async()=>({items:store.listCompanies()}));
   app.post("/api/crm/companies",async(req,reply)=>{
@@ -168,7 +168,7 @@ export const registerCrmRoutes:FastifyPluginAsync<{
       parameters:z.union([z.array(z.string()),z.record(z.string(),z.string())]).optional(),
     }).safeParse(req.body);
     if(!params.success||!body.success)return reply.code(422).send({error:"Envio inválido"});
-    if(!prospectLead||prospectingEnabled===false)
+    if(!prospectLead||(typeof prospectingEnabled==="function"? !prospectingEnabled():prospectingEnabled===false))
       return reply.code(503).send({error:"Prospecção por template indisponível nesta instalação"});
     if(!store.hasCampaignMember(params.data.id,body.data.phone))
       return reply.code(404).send({error:"Contato não associado a esta campanha"});
