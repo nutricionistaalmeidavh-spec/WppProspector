@@ -69,7 +69,8 @@ jobs:
         run: npm install --prefix desktop --no-audit --no-fund --workspaces=false
       - name: Build NSIS Windows x64 installer
         run: npm run dist --prefix desktop
-      - name: Publish test artifact for QA
+      - name: Publish test artifact for PR QA only
+        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: WppProspector-Windows-x64
@@ -80,8 +81,8 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.0-trial
-          name: WppProspector CRM Windows — avaliação 0.1.0
+          tag_name: v0.1.1-trial
+          name: WppProspector CRM Windows — avaliação 0.1.1
           target_commitish: ${{ github.sha }}
           prerelease: true
           make_latest: false
