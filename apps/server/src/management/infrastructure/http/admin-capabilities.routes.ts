@@ -5,7 +5,7 @@ import { replyWithContract } from "./reply-with-contract.ts";
 export interface AdminCapabilitiesRoutesDeps {
   /** Famílias de ação montadas neste processo. */
   conversationActions: boolean;
-  prospecting: boolean;
+  prospecting: boolean | (() => boolean);
   crm?: { opportunities: boolean; companies: boolean; campaigns: boolean };
 }
 
@@ -21,7 +21,7 @@ export const registerAdminCapabilitiesRoutes: FastifyPluginAsync<
   app.get("/api/capabilities", async (_request, reply) => {
     return replyWithContract(reply, capabilitiesSchema, {
       conversationActions: deps.conversationActions,
-      prospecting: deps.prospecting,
+      prospecting: typeof deps.prospecting === "function" ? deps.prospecting() : deps.prospecting,
       ...(deps.crm ? { crm: deps.crm } : {}),
     });
   });
