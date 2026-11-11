@@ -24,8 +24,23 @@ jobs:
           cache: npm
       - name: Install monorepo dependencies
         run: npm ci
-      - name: Full application QA
-        run: npm run check
+      - name: Windows QA (same checks, with slower filesystem timeout)
+        shell: pwsh
+        run: |
+          npm run check:contracts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run lint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:runtime
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test -w wpp_prospector_bot_server -- --testTimeout=30000
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test -w wpp_prospector_bot_panel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: HTTP and persistence smoke test
         run: npm run test:smoke
       - name: Verify offline trial signatures
