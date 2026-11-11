@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from "fastify";
 import { verify } from "./session-token.ts";
+import type { TeamStore } from "../../../team/team-store.ts";
 
 export const SESSION_COOKIE_NAME = "admin_session";
 
@@ -22,6 +23,7 @@ function pathOf(request: FastifyRequest): string {
 export function createAdminSessionGuard(deps: {
   sessionSecret: string;
   clock?: () => Date;
+  team?: TeamStore;
 }): preHandlerAsyncHookHandler {
   const clock = deps.clock ?? (() => new Date());
 
@@ -39,8 +41,24 @@ export function createAdminSessionGuard(deps: {
       return unauthorized(reply);
     }
 
-    if (verify(token, clock(), deps.sessionSecret).status !== "ok") {
-      return unauthorized(reply);
-    }
+    const session=verify(token,clock(),deps.sessionSecret);
+    if(session.status!=="ok")return unauthorized(reply);
+    const {userId,version,role}=session.payload;
+    if(userId&&(!deps.team||!deps.team.sessionValid(userId,version!)))return unauthorized(reply);
+    // O segredo administrativo legado mantém o papel admin; contas da equipe são limitadas.
+    if(!userId)return;
+    const apiPath=path.slice(path.indexOf("/api/"));
+    if(apiPath.startsWith("/api/team/"))return reply.code(403).send({error:"forbidden"});
+    const write=!["GET","HEAD","OPTIONS"].includes(request.method);
+    if(!write||apiPath==="/api/session")return;
+    if(role==="manager")return;
+    // Agentes podem operar o CRM, mas não administrar contas, campanhas, regras
+    // de automação ou realizar prospecção em massa.
+    const allowedCrm=/^\/api\/crm\/(?:companies|opportunities|customers\/convert|quotes|activities)(?:\/.*)?$/.test(apiPath);
+    const allowedLead=request.method==="POST"&&apiPath==="/api/leads";
+    const allowedManualMessage=request.method==="POST"&&
+      /^\/api\/conversations\/[^/]+\/messages$/.test(apiPath);
+    if(!allowedCrm&&!allowedLead&&!allowedManualMessage)
+      return reply.code(403).send({error:"forbidden"});
   };
 }
