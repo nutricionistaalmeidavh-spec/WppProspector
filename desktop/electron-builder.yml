@@ -1,0 +1,30 @@
+appId: dev.artisys.wppprospector
+productName: ArtiSys WppProspector CRM
+copyright: Copyright (c) 2026 ArtiSys
+asar: true
+files:
+  - main.cjs
+  - preload.cjs
+  - license.cjs
+  - public-key.pem
+  - activation.html
+  - activation.js
+extraResources:
+  - from: ../desktop-build/app-runtime
+    to: app-runtime
+    filter:
+      - '**/*'
+directories:
+  output: ../release
+  buildResources: .
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  executableName: WppProspector
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  artifactName: 'ArtiSys-WppProspector-Setup-${version}-${arch}.${ext}'
