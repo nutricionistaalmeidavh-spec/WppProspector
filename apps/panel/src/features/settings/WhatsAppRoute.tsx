@@ -144,7 +144,7 @@ export function WhatsAppRoute(){
             </div>
             {session.qrAvailable?<div className="flex flex-col items-center gap-2 rounded-lg bg-white p-4">
               <img alt={`QR para conectar a sessão ${session.id}`} width={260} height={260}
-                className="aspect-square w-full max-w-[260px]" src={`/admin/api/whatsapp/connections/local/${encodeURIComponent(session.id)}/qr.svg?v=${qrVersion}`}/>
+                className="aspect-square w-full max-w-[260px]" src={`/admin/api/whatsapp/connections/local/${encodeURIComponent(session.id)}/qr.svg?v=${qrVersion}-${result.dataUpdatedAt}`}/>
               <span className="text-center text-xs text-slate-600">Aponte a câmera do WhatsApp para este código.</span>
             </div>:null}
             {session.status!=="connected"&&session.active?<Button size="sm" variant="outline" disabled={busy!==null}
