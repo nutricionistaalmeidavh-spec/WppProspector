@@ -11,7 +11,7 @@ describe("credenciais dos canais Meta", () => {
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   ); CREATE UNIQUE INDEX one_active_channel ON whatsapp_channels(active) WHERE active=1;`);
   const store = new WhatsAppChannelStore(db, "secret-only-on-server-with-256-bit-entropy");
-  afterEach(() => store.deactivate());
+  afterEach(() => db.exec("DELETE FROM whatsapp_channels"));
 
   it("criptografa o token e nunca o inclui na listagem", () => {
     const item = store.upsert({ phoneNumberId: "123", wabaId: "999", displayName: "Atendimento", accessToken: "sensitive-token" });
