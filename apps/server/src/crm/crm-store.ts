@@ -39,7 +39,9 @@ export class CrmStore {
       SELECT c.*,
       (SELECT count(*) FROM leads l WHERE l.company_id=c.id) AS lead_count,
       (SELECT count(*) FROM crm_opportunities o WHERE o.company_id=c.id) AS opportunity_count,
-      (SELECT coalesce(sum(o.estimated_cents),0) FROM crm_opportunities o WHERE o.company_id=c.id AND o.stage NOT IN ('lost','won')) AS pipeline_cents
+      (SELECT coalesce(sum(coalesce(q.total_cents,o.estimated_cents)),0)
+         FROM crm_opportunities o LEFT JOIN crm_quotes q ON q.opportunity_id=o.id
+         WHERE o.company_id=c.id AND o.stage NOT IN ('lost','won')) AS pipeline_cents
       FROM crm_companies c ORDER BY c.name COLLATE NOCASE, c.id LIMIT 500`).all() as Row[];
     return rows.map(r=>({id:str(r,"id"),name:str(r,"name"),city:str(r,"city"),segment:str(r,"segment"),
       leadCount:Number(r.lead_count),opportunityCount:Number(r.opportunity_count),pipelineValue:euro(r.pipeline_cents)}));
@@ -93,6 +95,8 @@ export class CrmStore {
     if(!this.exists("crm_companies","id",input.companyId))throw new Error("Empresa não encontrada.");
     if(!this.exists("leads","phone",input.leadPhone))throw new Error("Lead não encontrado; cadastre ou importe primeiro.");
     if(input.campaignId&&!this.exists("crm_campaigns","id",input.campaignId))throw new Error("Campanha não encontrada.");
+    if(input.campaignId&&!this.hasCampaignMember(input.campaignId,input.leadPhone))
+      throw new Error("Lead não pertence à campanha.");
     const id=randomUUID(),at=this.now(),stage=input.stage??"new";
     this.db.exec("BEGIN");
     try{
@@ -121,6 +125,8 @@ export class CrmStore {
     if(!this.exists("crm_companies","id",companyId))throw new Error("Empresa não encontrada.");
     if(!this.exists("leads","phone",leadPhone))throw new Error("Lead não encontrado.");
     if(campaignId&&!this.exists("crm_campaigns","id",String(campaignId)))throw new Error("Campanha não encontrada.");
+    if(campaignId&&!this.hasCampaignMember(String(campaignId),leadPhone))
+      throw new Error("Lead não pertence à campanha.");
     const stage=patch.stage??old.stage as Stage,at=this.now();
     const wonAt=stage==="won"?(old.stage==="won"&&old.won_at?String(old.won_at):at):null;
     this.db.exec("BEGIN");
