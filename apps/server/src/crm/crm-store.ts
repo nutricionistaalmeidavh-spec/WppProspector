@@ -37,7 +37,7 @@ export class CrmStore {
   listCompanies():Company[]{
     const rows=this.db.prepare(`
       SELECT c.*,
-      (SELECT count(*) FROM leads l WHERE lower(trim(l.company))=lower(trim(c.name))) AS lead_count,
+      (SELECT count(*) FROM leads l WHERE l.company_id=c.id) AS lead_count,
       (SELECT count(*) FROM crm_opportunities o WHERE o.company_id=c.id) AS opportunity_count,
       (SELECT coalesce(sum(o.estimated_cents),0) FROM crm_opportunities o WHERE o.company_id=c.id AND o.stage NOT IN ('lost','won')) AS pipeline_cents
       FROM crm_companies c ORDER BY c.name COLLATE NOCASE, c.id LIMIT 500`).all() as Row[];
@@ -104,6 +104,8 @@ export class CrmStore {
           input.qualification??"",at,at,stage==="won"?at:null);
       this.db.prepare("UPDATE crm_opportunities SET probability_percent=?,loss_reason=?,owner_user_id=? WHERE id=?")
         .run(input.probabilityPercent??0,input.lossReason??"",input.ownerUserId??null,id);
+      this.db.prepare("UPDATE leads SET company_id=?,updated_at=? WHERE phone=? AND company_id IS NULL")
+        .run(input.companyId,at,input.leadPhone);
       this.db.prepare("INSERT INTO crm_stage_events(id,opportunity_id,from_stage,to_stage,occurred_at) VALUES(?,?,?,?,?)")
         .run(randomUUID(),id,null,stage,at);
       this.db.exec("COMMIT");
@@ -308,18 +310,31 @@ export class CrmStore {
     return (this.db.prepare("SELECT id FROM crm_quotes ORDER BY created_at DESC,id LIMIT ?")
       .all(size) as Row[]).map(row=>this.getQuote(str(row,"id"))!);
   }
-  createActivity(input:{opportunityId:string;kind:"CALL"|"EMAIL"|"WHATSAPP"|"MEETING"|"TASK";subject:string;dueAt:string;owner?:string}){
-    if(!this.getOpportunity(input.opportunityId))throw new Error("Oportunidade não encontrada.");
+  createActivity(input:{opportunityId:string;kind:"CALL"|"EMAIL"|"WHATSAPP"|"MEETING"|"TASK";subject:string;dueAt:string;owner?:string;ownerUserId?:string|null;followupId?:string|null}){
+    const opp=this.getOpportunity(input.opportunityId);
+    if(!opp)throw new Error("Oportunidade não encontrada.");
+    if(input.followupId){
+      const followup=this.db.prepare("SELECT phone FROM automation_followups WHERE id=?").get(input.followupId) as {phone:string}|undefined;
+      if(!followup||followup.phone!==opp.leadPhone)throw new Error("Follow-up não pertence ao lead da oportunidade.");
+      if(input.kind!=="WHATSAPP")throw new Error("Somente atividades WhatsApp podem vincular follow-up.");
+    }
     const id=randomUUID(),at=this.now();
-    this.db.prepare("INSERT INTO crm_activities(id,opportunity_id,kind,subject,due_at,owner,created_at) VALUES(?,?,?,?,?,?,?)")
-      .run(id,input.opportunityId,input.kind,input.subject.trim(),input.dueAt,input.owner?.trim()??"",at);
+    this.db.prepare("INSERT INTO crm_activities(id,opportunity_id,kind,subject,due_at,owner,owner_user_id,followup_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)")
+      .run(id,input.opportunityId,input.kind,input.subject.trim(),input.dueAt,input.owner?.trim()??"",input.ownerUserId??null,input.followupId??null,at);
     return this.getActivity(id)!;
   }
   getActivity(id:string){
-    const row=this.db.prepare("SELECT * FROM crm_activities WHERE id=?").get(id) as Row|undefined;
+    const row=this.db.prepare(`SELECT a.*,u.username AS owner_username,f.state AS followup_state,
+      f.due_at AS followup_due_at FROM crm_activities a
+      LEFT JOIN crm_team_users u ON u.id=a.owner_user_id
+      LEFT JOIN automation_followups f ON f.id=a.followup_id WHERE a.id=?`).get(id) as Row|undefined;
     if(!row)return null;
     return {id:str(row,"id"),opportunityId:str(row,"opportunity_id"),kind:str(row,"kind"),
-      subject:str(row,"subject"),dueAt:str(row,"due_at"),owner:str(row,"owner"),
+      subject:str(row,"subject"),dueAt:str(row,"followup_due_at").slice(0,10)||str(row,"due_at"),
+      owner:str(row,"owner_username")||str(row,"owner"),
+      ownerUserId:row.owner_user_id==null?null:str(row,"owner_user_id"),
+      followupId:row.followup_id==null?null:str(row,"followup_id"),
+      followupState:row.followup_id==null?null:str(row,"followup_state"),
       status:str(row,"status") as "OPEN"|"DONE",
       createdAt:str(row,"created_at"),completedAt:row.completed_at==null?null:str(row,"completed_at")};
   }
@@ -338,12 +353,17 @@ export class CrmStore {
     return this.getActivity(id);
   }
   commercialReport(){
-    const opportunities=this.db.prepare("SELECT stage,owner,source,estimated_cents,probability_percent FROM crm_opportunities").all() as Row[];
+    const opportunities=this.db.prepare(`SELECT o.stage,o.source,o.probability_percent,
+      COALESCE(t.username,o.owner) AS owner,
+      COALESCE(q.total_cents,o.estimated_cents) AS effective_cents
+      FROM crm_opportunities o
+      LEFT JOIN crm_team_users t ON t.id=o.owner_user_id
+      LEFT JOIN crm_quotes q ON q.opportunity_id=o.id`).all() as Row[];
     const group=(key:"owner"|"source")=>{
       const totals=new Map<string,{name:string;total:number;won:number;valueCents:number}>();
       for(const opp of opportunities){
         const name=str(opp,key)||"Não informado",current=totals.get(name)??{name,total:0,won:0,valueCents:0};
-        current.total++;if(opp.stage==="won")current.won++;current.valueCents+=Number(opp.estimated_cents);
+        current.total++;if(opp.stage==="won")current.won++;current.valueCents+=Number(opp.effective_cents);
         totals.set(name,current);
       }
       return [...totals.values()].map(({valueCents,...other})=>({...other,value:valueCents/100}))
@@ -353,9 +373,9 @@ export class CrmStore {
     const overdue=this.db.prepare("SELECT count(*) AS total FROM crm_activities WHERE status='OPEN' AND due_at < ?")
       .get(today) as {total:number};
     return {total:opportunities.length,won:opportunities.filter(o=>o.stage==="won").length,
-      openValue:opportunities.filter(o=>o.stage!=="won"&&o.stage!=="lost").reduce((sum,o)=>sum+Number(o.estimated_cents),0)/100,
+      openValue:opportunities.filter(o=>o.stage!=="won"&&o.stage!=="lost").reduce((sum,o)=>sum+Number(o.effective_cents),0)/100,
       weightedValue:opportunities.filter(o=>o.stage!=="won"&&o.stage!=="lost")
-        .reduce((sum,o)=>sum+Number(o.estimated_cents)*Number(o.probability_percent)/100,0)/100,
+        .reduce((sum,o)=>sum+Number(o.effective_cents)*Number(o.probability_percent)/100,0)/100,
       overdueActivities:Number(overdue.total),byOwner:group("owner"),bySource:group("source")};
   }
 
