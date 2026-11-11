@@ -41,9 +41,16 @@ jobs:
         run: npm ci
 
       - name: QA de contratos, lint, tipos, testes e build
+        id: checks
+        continue-on-error: true
         run: npm run check
 
+      - name: Compilar para captura mesmo se testes unitários falharem
+        run: npm run build
+
       - name: Smoke do servidor real com SQLite temporário
+        id: smoke
+        continue-on-error: true
         run: npm run test:smoke
 
       - name: Instalar Playwright open source em pasta isolada
@@ -54,6 +61,8 @@ jobs:
           node "$RUNNER_TEMP/wpp-qa-tools/node_modules/playwright/cli.js" install --with-deps chromium
 
       - name: Navegar pelas telas reais e capturar PNGs
+        id: screenshots
+        continue-on-error: true
         env:
           QA_PLAYWRIGHT_MODULE: ${{ runner.temp }}/wpp-qa-tools/node_modules/playwright/index.mjs
         run: node scripts/qa-visual.mjs
@@ -66,3 +75,9 @@ jobs:
           path: artifacts/qa-visual/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Reprovar QA quando testes, smoke ou capturas falharem
+        if: always() && (steps.checks.outcome == 'failure' || steps.smoke.outcome == 'failure' || steps.screenshots.outcome == 'failure')
+        run: |
+          echo 'A QA identificou falhas. Consulte os logs e baixe o artifact de screenshots para diagnosticar.'
+          exit 1
