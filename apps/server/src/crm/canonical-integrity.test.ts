@@ -44,6 +44,18 @@ describe("P0 - integridade canônica entre módulos",()=>{
    expect(store.listCampaigns().find(x=>x.id===b.id)).toMatchObject({sent:0,replied:0});
   }finally{db.close();}
  });
+ it("vínculo de oportunidade com campanha requer associação real do lead ao público",()=>{
+  const {db,store,company,opportunity}=fixture();
+  try{
+   const campaign=store.createCampaign({name:"Sem público"});
+   expect(()=>store.createOpportunity({title:"Nova venda",companyId:company.id,
+     leadPhone:PHONE,campaignId:campaign.id})).toThrow("Lead não pertence à campanha.");
+   expect(()=>store.updateOpportunity(opportunity.id,{campaignId:campaign.id}))
+     .toThrow("Lead não pertence à campanha.");
+   store.addCampaignMembers(campaign.id,[PHONE]);
+   expect(store.updateOpportunity(opportunity.id,{campaignId:campaign.id})?.campaignId).toBe(campaign.id);
+  }finally{db.close();}
+ });
  it("responsável é usuário canônico por UUID, renomeado sem alterar oportunidades nem atividades",()=>{
   const {db,store,opportunity}=fixture();
   try{
@@ -77,6 +89,7 @@ describe("P0 - integridade canônica entre módulos",()=>{
    store.createQuote({opportunityId:opportunity.id,items:[{description:"Setup",quantity:1,unitPrice:350}]});
    expect(store.getOpportunity(opportunity.id)?.estimatedValue).toBe(2000);
    expect(store.commercialReport().openValue).toBe(350);
+   expect(store.listCompanies()[0]?.pipelineValue).toBe(350);
   }finally{db.close();}
  });
 });
