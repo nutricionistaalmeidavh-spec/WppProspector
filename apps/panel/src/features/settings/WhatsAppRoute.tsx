@@ -63,7 +63,8 @@ async function signupWithMeta(config:SignupConfig,pin:string):Promise<void>{
     };
     const maybeFinish=()=>{if(code&&wabaId&&phoneNumberId)done({code,wabaId,phoneNumberId});};
     const onMessage=(evt:MessageEvent)=>{
-      if(!["https://www.facebook.com","https://web.facebook.com"].includes(evt.origin))return;
+      try { const origin=new URL(evt.origin); if(origin.protocol!=="https:" || !(origin.hostname==="facebook.com" || origin.hostname.endsWith(".facebook.com")))return; }
+      catch { return; }
       let data:unknown=evt.data;
       if(typeof data==="string"){try{data=JSON.parse(data);}catch{return;}}
       if(!data||typeof data!=="object")return;
