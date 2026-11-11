@@ -43,6 +43,9 @@ export class BaileysGateway implements WhatsAppGatewayPort {
     return { status: this.status, qrAvailable: this.qr !== null, provider: "baileys" };
   }
 
+  /** QR efêmero, exposto somente através de rota administrativa autenticada. */
+  qrPayload(): string | null { return this.status === "qr" ? this.qr : null; }
+
   async start(inbound: LocalInbound): Promise<void> {
     this.inbound = inbound;
     this.shouldReconnect = true;
@@ -56,6 +59,7 @@ export class BaileysGateway implements WhatsAppGatewayPort {
     this.sock = undefined;
     this.connected = false;
     this.status = "disconnected";
+    this.qr = null;
   }
 
   private async connect(): Promise<void> {
