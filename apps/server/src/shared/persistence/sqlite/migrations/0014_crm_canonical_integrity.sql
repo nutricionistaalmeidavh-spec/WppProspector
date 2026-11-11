@@ -43,6 +43,7 @@ CREATE TABLE crm_campaign_deliveries(
  campaign_id TEXT NOT NULL REFERENCES crm_campaigns(id) ON DELETE CASCADE,
  lead_phone TEXT NOT NULL REFERENCES leads(phone) ON DELETE RESTRICT,
  wamid TEXT UNIQUE,
+ reply_message_id TEXT UNIQUE,
  status TEXT NOT NULL CHECK(status IN ('sent','replied','failed')),
  sent_at TEXT,
  replied_at TEXT,
