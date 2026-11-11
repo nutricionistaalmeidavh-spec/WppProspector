@@ -63,7 +63,10 @@ export class BaileysSessionManager implements WhatsAppGatewayPort {
     if (!this.inbound) throw new Error("O gerenciador precisa ser inicializado antes de adicionar sessões.");
     const session = this.factory(id, join(this.baseAuthDir, id));
     // Somente colocar no mapa depois do start: falha não deve ocupar vaga.
-    await session.start(this.inbound);
+    await session.start({ execute: message => {
+      // Evita que mensagens de um número secundário sejam respondidas pelo principal.
+      if (id === this.selectedId) this.inbound?.execute(message);
+    } });
     this.sessions.set(id, session);
   }
 
