@@ -57,6 +57,8 @@ describe("migration 0006_leads", () => {
         "segment",
         "city",
         "imported_at",
+        // referência relacional adicionada em 0014_crm_canonical_integrity
+        "company_id",
       ].sort(),
     );
 
