@@ -7,7 +7,7 @@ describe("QR SVG do conector local", () => {
     const svg = qrTerminalToSvg(terminal);
     expect(svg).toContain("<svg");
     expect(svg).toContain('viewBox="0 0 10 10"');
-    expect(svg).toContain("<path d=");
+    expect(svg).toContain(" d=\"M");
     expect(svg).not.toContain("script");
   });
   it("recusa a matriz vazia ou com caracteres inesperados", () => {
