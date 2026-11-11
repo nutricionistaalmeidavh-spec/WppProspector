@@ -22,9 +22,14 @@
     "start": "node scripts/run.mjs start",
     "dev": "node scripts/run.mjs dev",
     "dev:panel": "node scripts/run.mjs panel",
-    "test:runtime": "node --test scripts/runtime.test.mjs scripts/selfhost-config.test.mjs",
+    "test:runtime": "node --test scripts/runtime.test.mjs scripts/selfhost-config.test.mjs scripts/dependency-security.test.mjs",
     "test:smoke": "node scripts/smoke-built.mjs",
     "setup:selfhost": "node scripts/setup-selfhost.mjs"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "overrides": {
+    "brace-expansion": "^5.0.12",
+    "source-map-js": "^1.2.2",
+    "minimatch": "^11.0.1"
+  }
 }
