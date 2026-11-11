@@ -29,7 +29,7 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-export function getNavigationGroups(crm: CrmModules): NavGroup[] {
+export function getNavigationGroups(crm: CrmModules, role:"admin"|"manager"|"agent"="admin"): NavGroup[] {
   const enabled = <T extends NavItem>(condition: boolean, item: T): T | null =>
     condition ? item : null;
   const compact = (items: Array<NavItem | null>): NavItem[] => items.filter(Boolean) as NavItem[];
@@ -48,7 +48,7 @@ export function getNavigationGroups(crm: CrmModules): NavGroup[] {
         { to: "/crm/leads", label: "Leads", icon: UserRoundSearch },
         enabled(crm.companies, { to: "/crm/companies", label: "Empresas", icon: Building2 }),
         enabled(crm.opportunities && crm.companies, { to: "/crm/commercial", label: "Comercial", icon: ClipboardList }),
-        enabled(crm.opportunities && crm.companies, { to: "/settings/team", label: "Equipe", icon: UsersRound }),
+        enabled(role==="admin" && crm.opportunities && crm.companies, { to: "/settings/team", label: "Equipe", icon: UsersRound }),
       ]),
     },
     {
