@@ -70,3 +70,12 @@ export class ProspectingGatewayError extends Error {
     this.name = "ProspectingGatewayError";
   }
 }
+
+
+/** O contato já tem relação comercial e não deve receber primeiro contato de prospecção. */
+export class CustomerAlreadyConvertedError extends Error {
+ constructor(readonly leadPhone:string){
+  super("Contato já convertido em cliente; use atendimento comercial, não prospecção inicial.");
+  this.name="CustomerAlreadyConvertedError";
+ }
+}
