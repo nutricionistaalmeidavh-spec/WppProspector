@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Building2, CalendarClock, ChevronRight, CircleDollarSign, Search, UserRound } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { FeatureAvailability } from "@/components/FeatureAvailability";
@@ -42,7 +42,7 @@ function stageTone(stage: OpportunityStage): "neutral" | "info" | "success" | "w
 
 function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
   return (
-    <Link to={`/crm/opportunities/${opportunity.id}`} className="block rounded-xl border bg-card p-3.5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
+    <Link to={`/crm/opportunities/${opportunity.id}`} draggable onDragStart={event=>{event.dataTransfer.setData("text/plain",opportunity.id);event.dataTransfer.effectAllowed="move";}} className="block rounded-xl border bg-card p-3.5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0"><p className="truncate text-sm font-semibold">{opportunity.companyName}</p><p className="mt-0.5 truncate text-xs text-muted-foreground">{opportunity.title}</p></div>
         {opportunity.awaitingHuman ? <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Aguardando humano" /> : null}
@@ -55,11 +55,25 @@ function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
 
 export function PipelineRoute() {
   const crm = useCrmModule("opportunities");
+  const client = useQueryClient();
+  const [moving,setMoving] = useState<string|null>(null);
+  const [moveError,setMoveError] = useState("");
   const query = useQuery({ queryKey: ["crm", crm.source, "opportunities"], queryFn: () => crm.repository.listOpportunities(), enabled: crm.supported, staleTime: Infinity });
+  async function moveOpportunity(id:string,stage:OpportunityStage){
+    const current=query.data?.find(item=>item.id===id);
+    if(!current||current.stage===stage||moving)return;
+    setMoving(id);setMoveError("");
+    try{
+      await apiFetch("/crm/opportunities/"+encodeURIComponent(id),{method:"PATCH",body:{stage}});
+      await client.invalidateQueries({queryKey:["crm"]});
+    }catch(err){setMoveError(err instanceof Error?err.message:"Não foi possível mover a oportunidade");}
+    finally{setMoving(null);}
+  }
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="CRM" title="Pipeline" description="Acompanhe oportunidades por etapa do processo comercial." />
+      <PageHeader eyebrow="CRM" title="Pipeline" description="Arraste oportunidades entre etapas ou use o seletor acessível de cada cartão." />
+      {moveError?<p role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive">{moveError}</p>:null}
       {crm.supported && crm.source==="http"?<OpportunityCreateForm/>:null}
       <FeatureAvailability feature="Pipeline" supported={crm.supported}>
         {query.isLoading ? <Skeleton className="h-96" /> : (
@@ -69,11 +83,27 @@ export function PipelineRoute() {
                 const items = (query.data ?? []).filter((item) => item.stage === stage);
                 const total = items.reduce((sum, item) => sum + item.estimatedValue, 0);
                 return (
-                  <section key={stage} className="w-72 shrink-0 rounded-xl border bg-muted/25 p-2.5">
+                  <section key={stage} aria-label={"Mover para "+OPPORTUNITY_STAGE_LABEL[stage]}
+                    onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect="move";}}
+                    onDrop={event=>{event.preventDefault();const id=event.dataTransfer.getData("text/plain");void moveOpportunity(id,stage);}}
+                    className="w-72 shrink-0 rounded-xl border bg-muted/25 p-2.5">
                     <div className="mb-2.5 flex items-start justify-between gap-2 px-1">
                       <div><div className="flex items-center gap-2"><h2 className="text-xs font-semibold">{OPPORTUNITY_STAGE_LABEL[stage]}</h2><span className="rounded-full bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">{items.length}</span></div><p className="mt-1 text-[11px] text-muted-foreground">{formatBrl(total)}</p></div>
                     </div>
-                    <div className="space-y-2">{items.length > 0 ? items.map((item) => <OpportunityCard key={item.id} opportunity={item} />) : <div className="rounded-lg border border-dashed bg-background/60 px-3 py-6 text-center text-[11px] text-muted-foreground">Sem oportunidades</div>}</div>
+                    <div className="space-y-2">{items.length > 0 ? items.map((item) => (
+                      <div key={item.id} className="space-y-1">
+                        <OpportunityCard opportunity={item} />
+                        <label className="block text-[11px] text-muted-foreground">
+                          <span className="sr-only">Mover etapa de {item.title}</span>
+                          <select aria-label={"Mover etapa de "+item.title} value={item.stage}
+                            onChange={event=>void moveOpportunity(item.id,event.target.value as OpportunityStage)}
+                            disabled={moving===item.id}
+                            className="h-9 w-full rounded-md border bg-background px-2 text-xs">
+                            {OPPORTUNITY_STAGES.map(option=><option key={option} value={option}>{OPPORTUNITY_STAGE_LABEL[option]}</option>)}
+                          </select>
+                        </label>
+                      </div>
+                    )) : <div className="rounded-lg border border-dashed bg-background/60 px-3 py-6 text-center text-[11px] text-muted-foreground">Sem oportunidades</div>}</div>
                   </section>
                 );
               })}

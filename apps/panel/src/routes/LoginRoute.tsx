@@ -13,10 +13,13 @@ interface RedirectState {
 }
 
 export function LoginRoute() {
-  const { status, login } = useSession();
+  const { status, login, loginTeam } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
   const [secret, setSecret] = useState("");
+  const [mode,setMode]=useState<"admin"|"team">("admin");
+  const [username,setUsername]=useState("");
+  const [password,setPassword]=useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,11 +33,11 @@ export function LoginRoute() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(secret);
+      if(mode==="admin")await login(secret);else await loginTeam(username,password);
       const target = (location.state as RedirectState | null)?.from ?? "/overview";
       navigate(target, { replace: true });
     } catch (err) {
-      setError(isApiError(err, 401) ? "Segredo inválido." : "Não foi possível autenticar. Tente novamente.");
+      setError(isApiError(err, 401) ? (mode==="admin"?"Segredo inválido.":"Usuário ou senha inválidos.") : "Não foi possível autenticar. Tente novamente.");
     } finally {
       setSubmitting(false);
     }
@@ -68,15 +71,27 @@ export function LoginRoute() {
             </div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Acesso administrativo</p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight">Entrar no WPP CRM</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">Informe o segredo de acesso configurado no servidor.</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">Use a chave administrativa ou as credenciais individuais da sua equipe.</p>
 
+            <div className="mt-5 flex gap-2" role="group" aria-label="Forma de acesso">
+              <button type="button" className="rounded-md border px-3 py-2 text-sm" aria-pressed={mode==="admin"}
+                onClick={()=>setMode("admin")}>Administrador</button>
+              <button type="button" className="rounded-md border px-3 py-2 text-sm" aria-pressed={mode==="team"}
+                onClick={()=>setMode("team")}>Equipe</button>
+            </div>
             <form onSubmit={handleSubmit} className="mt-7 space-y-4">
-              <div className="space-y-2">
+              {mode==="admin"?<div className="space-y-2">
                 <Label htmlFor="secret">Segredo de acesso</Label>
                 <Input id="secret" type="password" autoComplete="current-password" value={secret} onChange={(event) => setSecret(event.target.value)} autoFocus />
-              </div>
+              </div>:<div className="space-y-3">
+                <div className="space-y-2"><Label htmlFor="team-login-user">Usuário</Label>
+                  <Input id="team-login-user" value={username} autoComplete="username" onChange={event=>setUsername(event.target.value)}/></div>
+                <div className="space-y-2"><Label htmlFor="team-login-password">Senha</Label>
+                  <Input id="team-login-password" type="password" value={password} autoComplete="current-password"
+                    onChange={event=>setPassword(event.target.value)}/></div>
+              </div>}
               {error ? <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p> : null}
-              <Button type="submit" className="w-full" disabled={submitting || secret.length === 0}>{submitting ? "Entrando…" : "Entrar"}</Button>
+              <Button type="submit" className="w-full" disabled={submitting || (mode==="admin"?secret.length===0:username.length===0||password.length===0)}>{submitting ? "Entrando…" : "Entrar"}</Button>
             </form>
           </CardContent>
         </Card>

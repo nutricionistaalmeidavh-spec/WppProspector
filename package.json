@@ -22,7 +22,9 @@
     "start": "node scripts/run.mjs start",
     "dev": "node scripts/run.mjs dev",
     "dev:panel": "node scripts/run.mjs panel",
-    "test:runtime": "node --test scripts/runtime.test.mjs",
-    "test:smoke": "node scripts/smoke-built.mjs"
-  }
+    "test:runtime": "node --test scripts/runtime.test.mjs scripts/selfhost-config.test.mjs",
+    "test:smoke": "node scripts/smoke-built.mjs",
+    "setup:selfhost": "node scripts/setup-selfhost.mjs"
+  },
+  "license": "MIT"
 }

@@ -1,7 +1,7 @@
 {
   "name": "wpp_prospector_bot_server",
   "version": "1.0.0",
-  "description": "Bot de WhatsApp para prospec\u00e7\u00e3o de clientes via WhatsApp Cloud API",
+  "description": "Bot de WhatsApp para prospecção de clientes via WhatsApp Cloud API",
   "main": "dist/main.js",
   "exports": {
     ".": "./dist/main.js",
@@ -24,16 +24,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Marcoslima016/wpp_prospector_bot.git"
+    "url": "git+https://github.com/nutricionistaalmeidavh-spec/WppProspector.git"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/Marcoslima016/wpp_prospector_bot/issues"
+    "url": "https://github.com/nutricionistaalmeidavh-spec/WppProspector/issues"
   },
-  "homepage": "https://github.com/Marcoslima016/wpp_prospector_bot#readme",
+  "homepage": "https://github.com/nutricionistaalmeidavh-spec/WppProspector#readme",
   "engines": {
     "node": ">=24.0.0"
   },

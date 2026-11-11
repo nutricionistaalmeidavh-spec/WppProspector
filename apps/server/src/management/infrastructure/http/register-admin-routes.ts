@@ -31,6 +31,8 @@ import type { AutomationStore } from "../../../automation/automation-store.ts";
 import { registerAutomationRoutes } from "../../../automation/automation.routes.ts";
 import { CrmStore } from "../../../crm/crm-store.ts";
 import { registerCrmRoutes } from "../../../crm/crm-routes.ts";
+import { TeamStore } from "../../../team/team-store.ts";
+import { registerTeamRoutes } from "../../../team/team.routes.ts";
 
 export interface AdminRoutesDeps {
   config: ResolvedAdminConfig;
@@ -66,9 +68,10 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   const clock = deps.clock ?? (() => new Date());
 
   await app.register(cookie);
+  const team=new TeamStore(deps.db,clock);
   app.addHook(
     "preHandler",
-    createAdminSessionGuard({ sessionSecret: deps.config.sessionSecret, clock }),
+    createAdminSessionGuard({ sessionSecret: deps.config.sessionSecret, clock,team }),
   );
 
   const queries = new ConversationIndexQueries(deps.db);
@@ -108,6 +111,7 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
     sessionTtlMs: deps.config.sessionTtlMs,
     cookiePath,
     clock,
+    team,
   });
   await app.register(registerAdminConversationsRoutes, {
     queries,
@@ -129,6 +133,7 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   });
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
   await app.register(registerCrmRoutes, { store: new CrmStore(deps.db) });
+  await app.register(registerTeamRoutes,{store:team});
   if (deps.consent) await app.register(registerConsentRoutes, { consent: deps.consent });
   if (deps.automation && deps.consent) await app.register(registerAutomationRoutes, {
     automation: deps.automation, consent: deps.consent, followupsEnabled: deps.followupsEnabled ?? false,

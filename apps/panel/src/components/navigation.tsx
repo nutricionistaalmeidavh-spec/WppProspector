@@ -4,6 +4,7 @@ import {
   Workflow,
   Building2,
   CircleDollarSign,
+  ClipboardList,
   FileUp,
   Inbox,
   KanbanSquare,
@@ -13,6 +14,7 @@ import {
   Settings,
   Target,
   UserRoundSearch,
+  UsersRound,
 } from "lucide-react";
 import type { CrmModules } from "@/features/crm/runtime";
 
@@ -27,7 +29,7 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-export function getNavigationGroups(crm: CrmModules): NavGroup[] {
+export function getNavigationGroups(crm: CrmModules, role:"admin"|"manager"|"agent"="admin"): NavGroup[] {
   const enabled = <T extends NavItem>(condition: boolean, item: T): T | null =>
     condition ? item : null;
   const compact = (items: Array<NavItem | null>): NavItem[] => items.filter(Boolean) as NavItem[];
@@ -45,6 +47,8 @@ export function getNavigationGroups(crm: CrmModules): NavGroup[] {
         enabled(crm.opportunities, { to: "/crm/opportunities", label: "Oportunidades", icon: Target }),
         { to: "/crm/leads", label: "Leads", icon: UserRoundSearch },
         enabled(crm.companies, { to: "/crm/companies", label: "Empresas", icon: Building2 }),
+        enabled(crm.opportunities && crm.companies, { to: "/crm/commercial", label: "Comercial", icon: ClipboardList }),
+        enabled(role==="admin" && crm.opportunities && crm.companies, { to: "/settings/team", label: "Equipe", icon: UsersRound }),
       ]),
     },
     {

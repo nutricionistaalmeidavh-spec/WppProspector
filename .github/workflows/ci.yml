@@ -1,11 +1,17 @@
 name: Monorepo CI
 
-# Execução manual: a instalação e os testes também rodam pelo terminal.
+# CI obrigatório em alterações de código e PRs; sem publicação automática.
 on:
   workflow_dispatch:
-  pull_request:
-    types: [opened, reopened] # uma execução por abertura/reabertura de PR, não por commit
+  push:
     branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

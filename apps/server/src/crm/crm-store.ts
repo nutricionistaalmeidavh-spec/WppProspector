@@ -10,6 +10,7 @@ export interface OpportunityInput {
   title:string; companyId:string; leadPhone:string; stage?:Stage; estimatedValue?:number;
   owner?:string; nextAction?:string; nextActionAt?:string;
   campaignId?:string|null; source?:string; qualification?:string;
+  probabilityPercent?:number; lossReason?:string;
 }
 export interface Company extends Required<CompanyInput> {
   id:string; leadCount:number; opportunityCount:number; pipelineValue:number;
@@ -80,6 +81,7 @@ export class CrmStore {
       owner:str(r,"owner"),nextAction:str(r,"next_action"),nextActionAt:str(r,"next_action_at"),
       ...(r.campaign_id?{campaignId:str(r,"campaign_id"),campaignName:str(r,"campaign_name")}:{}),
       qualification:str(r,"qualification"),source:str(r,"source"),createdAt:str(r,"created_at"),
+      probabilityPercent:Number(r.probability_percent??0),lossReason:str(r,"loss_reason"),
     };
   }
   createOpportunity(input:OpportunityInput):Opportunity{
@@ -95,6 +97,8 @@ export class CrmStore {
         .run(id,input.title.trim(),input.companyId,input.leadPhone,stage,Math.round((input.estimatedValue??0)*100),
           input.owner??"",input.nextAction??"",input.nextActionAt??"",input.campaignId??null,input.source??"",
           input.qualification??"",at,at,stage==="won"?at:null);
+      this.db.prepare("UPDATE crm_opportunities SET probability_percent=?,loss_reason=? WHERE id=?")
+        .run(input.probabilityPercent??0,input.lossReason??"",id);
       this.db.prepare("INSERT INTO crm_stage_events(id,opportunity_id,from_stage,to_stage,occurred_at) VALUES(?,?,?,?,?)")
         .run(randomUUID(),id,null,stage,at);
       this.db.exec("COMMIT");
@@ -121,6 +125,8 @@ export class CrmStore {
           patch.owner??str(old,"owner"),patch.nextAction??str(old,"next_action"),
           patch.nextActionAt??str(old,"next_action_at"),campaignId??null,
           patch.source??str(old,"source"),patch.qualification??str(old,"qualification"),at,wonAt??null,id);
+      this.db.prepare("UPDATE crm_opportunities SET probability_percent=?,loss_reason=? WHERE id=?")
+        .run(patch.probabilityPercent??Number(old.probability_percent??0),patch.lossReason??str(old,"loss_reason"),id);
       if(stage!==old.stage)this.db.prepare("INSERT INTO crm_stage_events(id,opportunity_id,from_stage,to_stage,occurred_at) VALUES(?,?,?,?,?)")
         .run(randomUUID(),id,old.stage as string,stage,at);
       this.db.exec("COMMIT");
@@ -186,6 +192,132 @@ export class CrmStore {
   removeCampaignMember(id:string,phone:string):boolean{
     return Number(this.db.prepare("DELETE FROM crm_campaign_members WHERE campaign_id=? AND lead_phone=?").run(id,phone).changes)>0;
   }
+
+  /** Converte prospect em cliente comercial sem alterar o estado do lead ou a conversa fonte. */
+  convertLeadToCustomer(leadPhone:string){
+    const lead=this.db.prepare("SELECT phone,display_name,company FROM leads WHERE phone=?")
+      .get(leadPhone) as Row|undefined;
+    if(!lead)throw new Error("Lead não encontrado.");
+    const prev=this.db.prepare("SELECT * FROM crm_customers WHERE lead_phone=?").get(leadPhone) as Row|undefined;
+    if(prev)return this.customerRow(prev);
+    const company=this.db.prepare("SELECT id FROM crm_companies WHERE name=? COLLATE NOCASE")
+      .get(str(lead,"company")) as Row|undefined;
+    const id=randomUUID(),at=this.now();
+    this.db.prepare("INSERT OR IGNORE INTO crm_customers(id,lead_phone,name,company_id,created_at,updated_at) VALUES(?,?,?,?,?,?)")
+      .run(id,leadPhone,str(lead,"display_name")||leadPhone,company?.id==null?null:String(company.id),at,at);
+    const saved=this.db.prepare("SELECT * FROM crm_customers WHERE lead_phone=?").get(leadPhone) as Row;
+    return this.customerRow(saved);
+  }
+  private customerRow(row:Row){
+    return {id:str(row,"id"),leadPhone:str(row,"lead_phone"),name:str(row,"name"),
+      companyId:row.company_id==null?null:str(row,"company_id"),createdAt:str(row,"created_at")};
+  }
+  listCustomers(limit=200){
+    const size=Math.max(1,Math.min(500,Math.trunc(limit)));
+    return (this.db.prepare("SELECT * FROM crm_customers ORDER BY created_at DESC,id LIMIT ?")
+      .all(size) as Row[]).map(row=>this.customerRow(row));
+  }
+  createQuote(input:{opportunityId:string;items:Array<{description:string;quantity:number;unitPrice:number}>;notes?:string}){
+    const opp=this.getOpportunity(input.opportunityId);
+    if(!opp)throw new Error("Oportunidade não encontrada.");
+    const prior=this.db.prepare("SELECT id FROM crm_quotes WHERE opportunity_id=?").get(opp.id) as Row|undefined;
+    if(prior)return this.getQuote(str(prior,"id"))!;
+    if(!input.items.length||input.items.length>100)throw new Error("Orçamento precisa de 1 a 100 itens.");
+    const items=input.items.map(item=>{
+      const description=item.description.trim(),quantity=item.quantity,unitCents=Math.round(item.unitPrice*100);
+      if(!description||description.length>200||!Number.isFinite(quantity)||quantity<=0||
+         !Number.isFinite(item.unitPrice)||item.unitPrice<0||!Number.isSafeInteger(unitCents)||
+         !Number.isSafeInteger(Math.round(quantity*unitCents)))
+        throw new Error("Item do orçamento inválido.");
+      return {description,quantity,unitCents,lineCents:Math.round(quantity*unitCents)};
+    });
+    const totalCents=items.reduce((sum,item)=>sum+item.lineCents,0);
+    if(!Number.isSafeInteger(totalCents))throw new Error("Valor de orçamento acima do limite.");
+    const customer=this.convertLeadToCustomer(opp.leadPhone),id=randomUUID(),at=this.now();
+    this.db.exec("BEGIN");
+    try{
+      this.db.prepare("INSERT INTO crm_quotes(id,opportunity_id,customer_id,notes,total_cents,created_at) VALUES(?,?,?,?,?,?)")
+        .run(id,opp.id,customer.id,input.notes?.trim()??"",totalCents,at);
+      const add=this.db.prepare("INSERT INTO crm_quote_items(id,quote_id,description,quantity,unit_cents,line_cents) VALUES(?,?,?,?,?,?)");
+      for(const item of items)add.run(randomUUID(),id,item.description,item.quantity,item.unitCents,item.lineCents);
+      if(["new","contacted","replied","qualified","meeting"].includes(opp.stage)){
+        this.db.prepare("UPDATE crm_opportunities SET stage='proposal',updated_at=? WHERE id=?")
+          .run(at,opp.id);
+        this.db.prepare("INSERT INTO crm_stage_events(id,opportunity_id,from_stage,to_stage,occurred_at) VALUES(?,?,?,?,?)")
+          .run(randomUUID(),opp.id,opp.stage,"proposal",at);
+      }
+      this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+    return this.getQuote(id)!;
+  }
+  getQuote(id:string){
+    const quote=this.db.prepare("SELECT * FROM crm_quotes WHERE id=?").get(id) as Row|undefined;
+    if(!quote)return null;
+    const items=this.db.prepare("SELECT * FROM crm_quote_items WHERE quote_id=? ORDER BY rowid")
+      .all(id) as Row[];
+    return {id:str(quote,"id"),opportunityId:str(quote,"opportunity_id"),
+      customerId:str(quote,"customer_id"),notes:str(quote,"notes"),
+      totalCents:Number(quote.total_cents),status:str(quote,"status"),
+      createdAt:str(quote,"created_at"),
+      items:items.map(item=>({id:str(item,"id"),description:str(item,"description"),
+        quantity:Number(item.quantity),unitCents:Number(item.unit_cents),lineCents:Number(item.line_cents)}))};
+  }
+  listQuotes(limit=100){
+    const size=Math.max(1,Math.min(500,Math.trunc(limit)));
+    return (this.db.prepare("SELECT id FROM crm_quotes ORDER BY created_at DESC,id LIMIT ?")
+      .all(size) as Row[]).map(row=>this.getQuote(str(row,"id"))!);
+  }
+  createActivity(input:{opportunityId:string;kind:"CALL"|"EMAIL"|"WHATSAPP"|"MEETING"|"TASK";subject:string;dueAt:string;owner?:string}){
+    if(!this.getOpportunity(input.opportunityId))throw new Error("Oportunidade não encontrada.");
+    const id=randomUUID(),at=this.now();
+    this.db.prepare("INSERT INTO crm_activities(id,opportunity_id,kind,subject,due_at,owner,created_at) VALUES(?,?,?,?,?,?,?)")
+      .run(id,input.opportunityId,input.kind,input.subject.trim(),input.dueAt,input.owner?.trim()??"",at);
+    return this.getActivity(id)!;
+  }
+  getActivity(id:string){
+    const row=this.db.prepare("SELECT * FROM crm_activities WHERE id=?").get(id) as Row|undefined;
+    if(!row)return null;
+    return {id:str(row,"id"),opportunityId:str(row,"opportunity_id"),kind:str(row,"kind"),
+      subject:str(row,"subject"),dueAt:str(row,"due_at"),owner:str(row,"owner"),
+      status:str(row,"status") as "OPEN"|"DONE",
+      createdAt:str(row,"created_at"),completedAt:row.completed_at==null?null:str(row,"completed_at")};
+  }
+  listActivities(filter:{status?:"OPEN"|"DONE";opportunityId?:string;owner?:string}={}){
+    const sql=["SELECT * FROM crm_activities WHERE 1=1"],values:string[]=[];
+    if(filter.status){sql.push("AND status=?");values.push(filter.status);}
+    if(filter.opportunityId){sql.push("AND opportunity_id=?");values.push(filter.opportunityId);}
+    if(filter.owner){sql.push("AND owner=?");values.push(filter.owner);}
+    sql.push("ORDER BY due_at,id LIMIT 500");
+    return (this.db.prepare(sql.join(" ")).all(...values) as Row[])
+      .map(row=>this.getActivity(str(row,"id"))!);
+  }
+  completeActivity(id:string){
+    this.db.prepare("UPDATE crm_activities SET status='DONE',completed_at=? WHERE id=? AND status='OPEN'")
+      .run(this.now(),id);
+    return this.getActivity(id);
+  }
+  commercialReport(){
+    const opportunities=this.db.prepare("SELECT stage,owner,source,estimated_cents,probability_percent FROM crm_opportunities").all() as Row[];
+    const group=(key:"owner"|"source")=>{
+      const totals=new Map<string,{name:string;total:number;won:number;valueCents:number}>();
+      for(const opp of opportunities){
+        const name=str(opp,key)||"Não informado",current=totals.get(name)??{name,total:0,won:0,valueCents:0};
+        current.total++;if(opp.stage==="won")current.won++;current.valueCents+=Number(opp.estimated_cents);
+        totals.set(name,current);
+      }
+      return [...totals.values()].map(({valueCents,...other})=>({...other,value:valueCents/100}))
+        .sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+    };
+    const today=this.now().slice(0,10);
+    const overdue=this.db.prepare("SELECT count(*) AS total FROM crm_activities WHERE status='OPEN' AND due_at < ?")
+      .get(today) as {total:number};
+    return {total:opportunities.length,won:opportunities.filter(o=>o.stage==="won").length,
+      openValue:opportunities.filter(o=>o.stage!=="won"&&o.stage!=="lost").reduce((sum,o)=>sum+Number(o.estimated_cents),0)/100,
+      weightedValue:opportunities.filter(o=>o.stage!=="won"&&o.stage!=="lost")
+        .reduce((sum,o)=>sum+Number(o.estimated_cents)*Number(o.probability_percent)/100,0)/100,
+      overdueActivities:Number(overdue.total),byOwner:group("owner"),bySource:group("source")};
+  }
+
   conversionMetrics(){
     const rows=this.db.prepare("SELECT stage,estimated_cents FROM crm_opportunities").all() as Row[];
     const qualified=new Set(["qualified","meeting","proposal","negotiation","won"]);

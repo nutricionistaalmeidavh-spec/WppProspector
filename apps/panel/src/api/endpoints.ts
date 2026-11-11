@@ -105,6 +105,18 @@ export async function createSession(secret: string): Promise<void> {
   await apiFetch("/session", { method: "POST", body: { secret }, emitSessionLost: false });
 }
 
+export type OperatorSessionRole="admin"|"manager"|"agent";
+export async function createTeamSession(username:string,password:string):Promise<OperatorSessionRole>{
+  const result=await apiFetch<{role:OperatorSessionRole}>("/session",{method:"POST",body:{username,password},emitSessionLost:false});
+  if(!["manager","agent"].includes(result.role))throw new Error("Perfil de operador inválido");
+  return result.role;
+}
+export async function getSessionRole():Promise<OperatorSessionRole>{
+  const result=await apiFetch<{role:OperatorSessionRole}>("/session/me");
+  if(!["admin","manager","agent"].includes(result.role))throw new Error("Perfil de sessão inválido");
+  return result.role;
+}
+
 export async function deleteSession(): Promise<void> {
   await apiFetch("/session", { method: "DELETE", emitSessionLost: false });
 }

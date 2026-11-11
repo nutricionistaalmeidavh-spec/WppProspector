@@ -9,7 +9,7 @@ import { getNavigationGroups, PRODUCT_MARK } from "@/components/navigation";
 import { useCrmRuntime } from "@/features/crm/runtime";
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { logout } = useSession();
+  const { logout, role } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -18,7 +18,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const drawerRef = useRef<HTMLElement>(null);
   const crmRuntime = useCrmRuntime();
   const ProductMark = PRODUCT_MARK;
-  const groups = getNavigationGroups(crmRuntime.modules);
+  const groups = getNavigationGroups(crmRuntime.modules,role??"agent");
 
   useEffect(() => {
     if (!mobileOpen) return;
