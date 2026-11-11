@@ -1,0 +1,79 @@
+name: WppProspector Windows installer (trial)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths: [desktop/**, .github/workflows/desktop-trial-release.yml, apps/server/src/main.ts]
+  push:
+    branches: [main]
+    paths: [desktop/**, .github/workflows/desktop-trial-release.yml, apps/server/src/main.ts]
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install monorepo dependencies
+        run: npm ci
+      - name: Full application QA
+        run: npm run check
+      - name: HTTP and persistence smoke test
+        run: npm run test:smoke
+      - name: Verify offline trial signatures
+        run: node --test desktop/license.test.cjs
+      - name: Prepare portable local runtime (no external paid APIs)
+        shell: pwsh
+        run: |
+          npm prune --omit=dev
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location apps/server
+          npm install --no-save --package-lock=false --workspaces=false baileys@6.7.24 pino@9.14.0 qrcode-terminal@0.12.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          $dest = 'desktop-build/app-runtime'
+          New-Item -ItemType Directory -Path "$dest/apps/server" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$dest/apps/panel" -Force | Out-Null
+          Copy-Item -Recurse -Force apps/server/dist "$dest/apps/server/dist"
+          Copy-Item -Recurse -Force apps/panel/dist "$dest/apps/panel/dist"
+          Copy-Item -Recurse -Force node_modules "$dest/node_modules"
+          if (Test-Path apps/server/node_modules) {
+            Copy-Item -Recurse -Force apps/server/node_modules "$dest/apps/server/node_modules"
+          }
+          Copy-Item -Force (Get-Command node).Source "$dest/node.exe"
+          if (!(Test-Path "$dest/apps/server/dist/main.js") -or !(Test-Path "$dest/apps/panel/dist/index.html") -or !(Test-Path "$dest/node.exe")) { throw 'Runtime incompleto' }
+      - name: Install desktop packaging tools
+        run: npm install --prefix desktop --no-audit --no-fund --workspaces=false
+      - name: Build NSIS Windows x64 installer
+        run: npm run dist --prefix desktop
+      - name: Publish test artifact for QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: WppProspector-Windows-x64
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish GitHub Release with direct installer URL
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.0-trial
+          name: WppProspector CRM Windows — avaliação 0.1.0
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: release/*.exe
+          body: |
+            Instalador de avaliação Windows x64 do WppProspector CRM.
+            Licença assinada fornecida separadamente pelo mantenedor ArtiSys.
+            Core local, Node.js e SQLite incluídos. Sem serviços pagos obrigatórios.
+            Ainda sem assinatura Authenticode; Windows SmartScreen poderá alertar.
