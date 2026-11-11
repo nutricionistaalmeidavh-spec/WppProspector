@@ -55,7 +55,9 @@ export interface AdminRoutesDeps {
   logger: Logger;
   consent?: SqliteConsentStore | undefined;
   diagnostics?: (() => { provider: string; status: string; qrAvailable: boolean }) | undefined;
-  prospectingEnabled?: boolean | undefined;
+  prospectingEnabled?: boolean | (() => boolean) | undefined;
+  whatsappConnections?: WhatsAppConnectionManager | undefined;
+  embeddedMetaSignup?: MetaEmbeddedSignup | undefined;
   automation?: AutomationStore | undefined;
   followupsEnabled?: boolean | undefined;
   clock?: () => Date;
