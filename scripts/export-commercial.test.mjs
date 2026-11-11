@@ -94,3 +94,15 @@ test('refuses populated example credentials',()=>{
   try {assert.throws(()=>exportCommercial({root,writeZip:false}),/Segredo\/identificador/);}
   finally {rmSync(root,{recursive:true,force:true});}
 });
+
+test('preserves distinct synonym object keys when generalizing module identifiers',()=>{
+  const root=fixture({'apps/server/src/conversation-engine/infrastructure/knowledge/synonyms.pt-br.ts':
+    'export const FIELD_SYNONYMS = {gamificacao: ["jogos"], jogos: ["jogos"]};\n'});
+  try {
+    const result=exportCommercial({root,writeZip:false});
+    const code=readFileSync(join(result.stage,'apps/server/src/conversation-engine/infrastructure/knowledge/synonyms.pt-br.ts'),'utf8');
+    const matches=[...code.matchAll(/\b(gamificacao|jogos)\s*:/g)].map(x=>x[1]);
+    assert.equal(new Set(matches).size, matches.length);
+    rmSync(result.stage,{recursive:true,force:true});
+  } finally {rmSync(root,{recursive:true,force:true});}
+});
