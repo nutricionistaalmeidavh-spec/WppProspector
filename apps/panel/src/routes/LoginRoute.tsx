@@ -37,7 +37,7 @@ export function LoginRoute() {
       const target = (location.state as RedirectState | null)?.from ?? "/overview";
       navigate(target, { replace: true });
     } catch (err) {
-      setError(isApiError(err, 401) ? "Credenciais inválidas." : "Não foi possível autenticar. Tente novamente.");
+      setError(isApiError(err, 401) ? (mode==="admin"?"Segredo inválido.":"Usuário ou senha inválidos.") : "Não foi possível autenticar. Tente novamente.");
     } finally {
       setSubmitting(false);
     }
