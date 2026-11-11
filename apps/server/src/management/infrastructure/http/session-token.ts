@@ -6,6 +6,9 @@ export interface SessionPayload {
   iat: number;
   /** Instante de expiração (epoch ms). */
   exp: number;
+  userId?: string;
+  role?: "manager"|"agent";
+  version?: number;
 }
 
 export type VerifyResult =
@@ -30,9 +33,9 @@ export function constantTimeEquals(a: string, b: string): boolean {
  * base64url(`{ iat, exp }`) e `hmac` = HMAC-SHA256(payload, secret). Sem store —
  * a sessão é stateless e cabe em um único operador.
  */
-export function issue(now: Date, ttlMs: number, secret: string): string {
+export function issue(now: Date, ttlMs: number, secret: string, operator?:{userId:string;role:"manager"|"agent";version:number}): string {
   const iat = now.getTime();
-  const payload: SessionPayload = { iat, exp: iat + ttlMs };
+  const payload: SessionPayload = operator ? { iat, exp:iat+ttlMs,...operator } : {iat,exp:iat+ttlMs};
   const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   return `${payloadB64}.${sign(payloadB64, secret)}`;
 }
@@ -70,6 +73,13 @@ export function verify(token: string, now: Date, secret: string): VerifyResult {
     typeof payload.exp !== "number"
   ) {
     return { status: "invalid-signature" };
+  }
+
+  if (payload.userId!==undefined||payload.role!==undefined||payload.version!==undefined) {
+    if(typeof payload.userId!=="string"||payload.userId.length===0||
+       (payload.role!=="manager"&&payload.role!=="agent")||
+       !Number.isInteger(payload.version)||Number(payload.version)<1)
+      return {status:"invalid-signature"};
   }
 
   if (now.getTime() >= payload.exp) return { status: "expired" };
