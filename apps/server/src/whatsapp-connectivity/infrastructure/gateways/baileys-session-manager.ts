@@ -37,6 +37,7 @@ export class BaileysSessionManager implements WhatsAppGatewayPort {
     for (const id of this.ids) await this.addSession(id);
   }
 
+  getSessionIds(): string[] { return [...this.ids]; }
   getSelectedId(): string { return this.selectedId; }
   selectSession(id: string): void {
     if (!this.ids.includes(id)) throw new Error("Sessão WhatsApp não configurada");
