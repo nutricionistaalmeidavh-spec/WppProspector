@@ -15,7 +15,7 @@ export interface OpportunityInput {
 export interface Company extends Required<CompanyInput> {
   id:string; leadCount:number; opportunityCount:number; pipelineValue:number;
 }
-export interface Opportunity extends Required<Omit<OpportunityInput,"stage"|"estimatedValue"|"campaignId">> {
+export interface Opportunity extends Required<Omit<OpportunityInput,"stage"|"estimatedValue"|"campaignId"|"ownerUserId">> {
   id:string; stage:Stage; estimatedValue:number; companyName:string; leadName:string;
   createdAt:string; campaignId?:string; campaignName?:string;
   ownerUserId?:string;
@@ -146,6 +146,13 @@ export class CrmStore {
     return rows.map(r=>({fromStage:r.from_stage==null?null:String(r.from_stage),toStage:str(r,"to_stage"),occurredAt:str(r,"occurred_at")}));
   }
   /** Registra somente mensagens comprovadamente enviadas em contexto de campanha. */
+  hasCampaignMember(campaignId:string,phone:string):boolean{
+    return Boolean(this.db.prepare("SELECT 1 FROM crm_campaign_members WHERE campaign_id=? AND lead_phone=?").get(campaignId,phone));
+  }
+  listAssignableOperators(){
+    return this.db.prepare("SELECT id,username,role FROM crm_team_users WHERE active=1 ORDER BY username LIMIT 500")
+      .all() as Array<{id:string;username:string;role:"manager"|"agent"}>;
+  }
   recordCampaignSend(campaignId:string,phone:string,wamid:string):boolean{
     if(!wamid.trim())throw new Error("Identificador de envio ausente.");
     if(!this.db.prepare("SELECT 1 FROM crm_campaign_members WHERE campaign_id=? AND lead_phone=?")
@@ -380,13 +387,14 @@ export class CrmStore {
   }
 
   conversionMetrics(){
-    const rows=this.db.prepare("SELECT stage,estimated_cents FROM crm_opportunities").all() as Row[];
+    const rows=this.db.prepare(`SELECT o.stage,COALESCE(q.total_cents,o.estimated_cents) AS quoted_cents
+      FROM crm_opportunities o LEFT JOIN crm_quotes q ON q.opportunity_id=o.id`).all() as Row[];
     const qualified=new Set(["qualified","meeting","proposal","negotiation","won"]);
     const proposal=new Set(["proposal","negotiation","won"]);
     return {total:rows.length,qualified:rows.filter(r=>qualified.has(str(r,"stage"))).length,
       proposal:rows.filter(r=>proposal.has(str(r,"stage"))).length,
       won:rows.filter(r=>r.stage==="won").length,
-      wonValue:rows.filter(r=>r.stage==="won").reduce((n,r)=>n+Number(r.estimated_cents),0)/100,
+      wonValue:rows.filter(r=>r.stage==="won").reduce((n,r)=>n+Number(r.quoted_cents),0)/100,
       stages:Object.fromEntries(CRM_STAGES.map(stage=>[stage,rows.filter(r=>r.stage===stage).length]))};
   }
 }
