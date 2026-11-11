@@ -78,7 +78,7 @@ export function verify(token: string, now: Date, secret: string): VerifyResult {
   if (payload.userId!==undefined||payload.role!==undefined||payload.version!==undefined) {
     if(typeof payload.userId!=="string"||payload.userId.length===0||
        (payload.role!=="manager"&&payload.role!=="agent")||
-       !Number.isInteger(payload.version)||Number(payload.version)<1)
+       (typeof payload.version!=="number"||!Number.isInteger(payload.version)||payload.version<1))
       return {status:"invalid-signature"};
   }
 
