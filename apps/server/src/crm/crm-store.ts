@@ -168,13 +168,18 @@ export class CrmStore {
       VALUES(?,?,?,'failed',?)`).run(randomUUID(),campaignId,phone,this.now());
   }
   /** A primeira resposta é atribuída apenas ao último envio que ainda espera resposta. */
-  recordCampaignReply(phone:string):boolean{
+  recordCampaignReply(phone:string,messageId?:string,receivedAt:Date=this.clock()):boolean{
+    const timestamp=receivedAt.toISOString();
+    if(messageId&&this.db.prepare("SELECT 1 FROM crm_campaign_deliveries WHERE reply_message_id=?")
+      .get(messageId))return false;
     const last=this.db.prepare(`SELECT id FROM crm_campaign_deliveries
-      WHERE lead_phone=? AND status='sent' ORDER BY sent_at DESC,rowid DESC LIMIT 1`)
-      .get(phone) as Row|undefined;
+      WHERE lead_phone=? AND status='sent' AND sent_at<=?
+      ORDER BY sent_at DESC,rowid DESC LIMIT 1`)
+      .get(phone,timestamp) as Row|undefined;
     if(!last)return false;
-    return Number(this.db.prepare("UPDATE crm_campaign_deliveries SET status='replied',replied_at=? WHERE id=? AND status='sent'")
-      .run(this.now(),last.id as string).changes)===1;
+    return Number(this.db.prepare(`UPDATE crm_campaign_deliveries
+      SET status='replied',replied_at=?,reply_message_id=? WHERE id=? AND status='sent'`)
+      .run(timestamp,messageId??null,last.id as string).changes)===1;
   }
   createCampaign(data:CampaignInput):Campaign{
     const id=randomUUID(),at=this.now(),status=data.status??"draft";
