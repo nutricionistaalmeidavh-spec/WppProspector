@@ -82,8 +82,8 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.1-trial
-          name: WppProspector CRM Windows — avaliação 0.1.1
+          tag_name: v0.1.2-trial
+          name: WppProspector CRM Windows — avaliação 0.1.2
           target_commitish: ${{ github.sha }}
           prerelease: true
           make_latest: false
@@ -91,6 +91,6 @@ jobs:
           files: release/*.exe
           body: |
             Instalador de avaliação Windows x64 do WppProspector CRM.
-            Licença assinada fornecida separadamente pelo mantenedor ArtiSys.
+            Ativação offline com código de 16 caracteres ou licença assinada antiga. Código fornecido separadamente.
             Core local, Node.js e SQLite incluídos. Sem serviços pagos obrigatórios.
             Ainda sem assinatura Authenticode; Windows SmartScreen poderá alertar.

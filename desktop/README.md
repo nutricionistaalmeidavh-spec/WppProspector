@@ -4,6 +4,10 @@ O instalador para Windows 64 bits encapsula o painel React, servidor Node.js 24 
 
 ## Licenciamento
 
+A partir do instalador **0.1.2**, a ativação de avaliação também aceita um código alfanumérico de **16 caracteres**. O código do lote é criado com 80 bits de aleatoriedade, e somente seu compromisso SHA-256 fica versionado e no instalador, nunca o código aberto. A verificação é offline, sem API externa, e expira em **25/11/2026, 22:33:02 UTC (19:33:02 Brasília)**, mesmo que a instalação seja posterior. O código pode ser copiado para outra máquina; não há vinculação ao dispositivo ou revogação offline, e novas emissões exigem atualizar a lista de hashes no app e distribuir outra build. Não use códigos curtos previsíveis.
+
+O novo mecanismo **não invalida licenças anteriores**:
+
 A ativação aceita códigos `WPP1.<payload>.<assinatura>` assinados com Ed25519. **Somente a chave pública fica no repositório e no instalador.** A chave privada deve ser guardada offline pelo proprietário; não adicioná-la ao GitHub Secrets nem a qualquer pacote distribuído. Para gerar nova avaliação (14 dias):
 
 ```sh
@@ -14,9 +18,9 @@ A licença é conferida antes do servidor iniciar e novamente a cada minuto. Exp
 
 ## Publicação
 
-`.github/workflows/desktop-trial-release.yml` valida contratos, testes, smoke e assinatura, empacota em runner Windows e publica o `.exe` na Release `v0.1.1-trial` quando a main recebe alterações relevantes, publicando diretamente na Release mesmo se o serviço de artefatos do Actions estiver indisponível. Um PR só gera artefato de QA, **não publica**. A URL de instalação pode ser distribuída após o job de Release estar verde:
+`.github/workflows/desktop-trial-release.yml` valida contratos, testes, smoke e assinatura, empacota em runner Windows e publica o `.exe` na Release `v0.1.2-trial` quando a main recebe alterações relevantes, publicando diretamente na Release mesmo se o serviço de artefatos do Actions estiver indisponível. Um PR só gera artefato de QA, **não publica**. A URL de instalação pode ser distribuída após o job de Release estar verde:
 
-`https://github.com/nutricionistaalmeidavh-spec/WppProspector/releases/download/v0.1.1-trial/ArtiSys-WppProspector-Setup-0.1.1-x64.exe`
+`https://github.com/nutricionistaalmeidavh-spec/WppProspector/releases/download/v0.1.2-trial/ArtiSys-WppProspector-Setup-0.1.2-x64.exe`
 
 O executável não possui certificado Authenticode. Não prometa ausência de alertas SmartScreen. Teste a instalação e a autenticação em Windows limpo antes de enviar a um cliente.
 
