@@ -45,7 +45,7 @@ describe("onboarding self-hosted do CRM", () => {
     expect((await request("GET", "/onboarding/state")).json().tour).toMatchObject({ index: 3, status: "in_progress" });
     expect((await request("PUT", "/onboarding/tour", { index: 6, status: "completed" })).statusCode).toBe(200);
     expect((await request("GET", "/onboarding/state")).json().tour.status).toBe("completed");
-    const count = test.db.prepare("SELECT COUNT(*) AS n FROM whatsapp_outbox").get() as {n:number};
+    const count = test.db.prepare("SELECT COUNT(*) AS n FROM outbound_jobs").get() as {n:number};
     expect(count.n).toBe(0);
   });
 

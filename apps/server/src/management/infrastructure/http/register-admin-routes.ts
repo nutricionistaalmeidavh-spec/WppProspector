@@ -1,5 +1,6 @@
 import cookie from "@fastify/cookie";
 import { BusinessAiStore } from "../../../business/business-ai-store.ts";
+import { registerOnboardingRoutes } from "../../../onboarding/onboarding.routes.ts";
 import { registerBusinessSettingsRoutes } from "../../../business/business-settings.routes.ts";
 import type { FastifyPluginAsync } from "fastify";
 import type { DatabaseSync } from "node:sqlite";
@@ -145,6 +146,7 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
   await app.register(registerBusinessSettingsRoutes, { db: deps.db, store: deps.businessAiStore ?? new BusinessAiStore(deps.db), sessionSecret: deps.config.sessionSecret, clock });
   await app.register(registerCrmRoutes, { store: new CrmStore(deps.db),prospectLead,prospectingEnabled:prospectingAllowed });
+  await app.register(registerOnboardingRoutes, { db: deps.db, sessionSecret: deps.config.sessionSecret, clock });
   await app.register(registerTeamRoutes,{store:team});
   if (deps.consent) await app.register(registerConsentRoutes, { consent: deps.consent });
   if (deps.automation && deps.consent) await app.register(registerAutomationRoutes, {
