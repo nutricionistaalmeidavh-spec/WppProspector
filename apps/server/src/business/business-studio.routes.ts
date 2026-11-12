@@ -102,7 +102,7 @@ export const registerBusinessStudioRoutes:FastifyPluginAsync<Deps> = async(app,d
     const business=studio.getDraft().profile;
     const engine=deps.store.getPreviewAi();
     if(engine.provider==="rules"||!allowExternal){
-      const response=await new LocalRulesLlmClient(()=>business).generate({
+      const response=await new LocalRulesLlmClient(()=>business,()=>studio.activeCatalog()).generate({
         system:"Atendimento de simulação",messages:[{role:"user",content:message}],maxTokens:300,model:"local-rules",
       });
       const output=JSON.parse(response.text) as {replyMessages:string[];handoffToHuman:boolean};
