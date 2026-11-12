@@ -13,7 +13,7 @@ import { AutomationRoute } from "@/features/automations/AutomationRoute";
 
 type Product = {name:string;price:string;description:string};
 type Faq = {question:string;answer:string};
-type Business = {name:string;segment:string;description:string;openingHours:string;paymentMethods:string;deliveryPolicy:string;returnPolicy:string;additionalInstructions:string;products:Product[];faq:Faq[]};
+type Business = {name:string;segment:string;description:string;openingHours:string;paymentMethods:string;deliveryPolicy:string;returnPolicy:string;additionalInstructions:string;products:Product[];faq:Faq[];semanticSearch:{enabled:boolean;endpoint:string;model:string}};
 type Engine = "rules"|"anthropic"|"openai"|"compatible";
 type EngineDraft = {provider:Engine;model:string;endpoint:string;published:boolean;hasApiKey:boolean};
 type Ai = {provider:Engine;model:string;providers:{anthropic:boolean;openai:boolean};canStoreKeys:boolean;endpoint?:string};
@@ -36,7 +36,7 @@ const stages: Array<{id:Stage;label:string}> = [
   {id:"rules",label:"Regras"},{id:"engine",label:"Inteligência"},{id:"lab",label:"Laboratório"},
   {id:"commerce",label:"E-commerce"},{id:"history",label:"Versões"},
 ];
-const empty:Business = {name:"",segment:"",description:"",openingHours:"",paymentMethods:"",deliveryPolicy:"",returnPolicy:"",additionalInstructions:"",products:[],faq:[]};
+const empty:Business = {name:"",segment:"",description:"",openingHours:"",paymentMethods:"",deliveryPolicy:"",returnPolicy:"",additionalInstructions:"",products:[],faq:[],semanticSearch:{enabled:false,endpoint:"",model:""}};
 const initial:EngineDraft = {provider:"rules",model:"",endpoint:"",published:true,hasApiKey:false};
 const suggested:Record<Engine,string> = {rules:"",anthropic:"claude-sonnet-4-5",openai:"gpt-4.1-mini",compatible:""};
 function readError(error:unknown):string { return error instanceof Error?error.message:"A operação não pôde ser concluída."; }
@@ -231,6 +231,26 @@ export function BusinessAiSettingsRoute(){
                 <Input aria-label={"Resposta "+(i+1)} placeholder="Resposta oficial" value={f.answer} onChange={e=>change("faq",profile.faq.map((v,j)=>i===j?{...v,answer:e.target.value}:v))}/>
                 <Button variant="ghost" size="icon" aria-label={"Excluir pergunta "+(i+1)} onClick={()=>change("faq",profile.faq.filter((_,j)=>j!==i))}><Trash2 className="h-4 w-4"/></Button>
               </div>)}
+              <div className="space-y-3 rounded-xl border p-4">
+                <label className="flex items-start gap-3 text-sm">
+                  <input type="checkbox" className="mt-1" checked={profile.semanticSearch?.enabled??false}
+                    onChange={e=>change("semanticSearch",{...(profile.semanticSearch??{endpoint:"",model:""}),enabled:e.target.checked})}/>
+                  <span><strong className="block">Busca semântica local (opcional)</strong>
+                    <span className="text-xs text-muted-foreground">Desativada por padrão. Só consulta seu servidor de embeddings quando você ativar e publicar esta configuração. Sem API paga obrigatória.</span></span>
+                </label>
+                {profile.semanticSearch?.enabled?<div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1"><Label htmlFor="semantic-endpoint">Endpoint de embeddings</Label>
+                    <Input id="semantic-endpoint" type="url" value={profile.semanticSearch.endpoint}
+                      placeholder="http://127.0.0.1:8080/v1/embeddings"
+                      onChange={e=>change("semanticSearch",{...profile.semanticSearch,endpoint:e.target.value})}/>
+                  </div>
+                  <div className="space-y-1"><Label htmlFor="semantic-model">Modelo self-hosted</Label>
+                    <Input id="semantic-model" value={profile.semanticSearch.model} placeholder="nome-do-modelo-de-embeddings"
+                      onChange={e=>change("semanticSearch",{...profile.semanticSearch,model:e.target.value})}/>
+                  </div>
+                  <p className="text-xs text-muted-foreground sm:col-span-2">Necessita servidor de embeddings compatível com /v1/embeddings. Se indisponível, o atendimento continua usando regras e FTS5. Não baixa modelos automaticamente.</p>
+                </div>:null}
+              </div>
               <div className="grid gap-3 border-t pt-4 sm:grid-cols-2">
                 <label className="space-y-1 text-sm"><span className="font-medium">Importar FAQ (CSV/XLSX)</span><Input type="file" accept=".csv,.xlsx,.xls" onChange={e=>{const file=e.target.files?.[0];if(file)void parseSheet(file,"faq");e.target.value="";}}/><span className="block text-xs text-muted-foreground">Colunas: pergunta, resposta</span></label>
                 <label className="space-y-1 text-sm"><span className="font-medium">Importar catálogo maior</span><Input type="file" accept=".csv,.xlsx,.xls" onChange={e=>{const file=e.target.files?.[0];if(file)void parseSheet(file,"catalog");e.target.value="";}}/><span className="block text-xs text-muted-foreground">Colunas: nome, sku, preço, estoque</span></label>
