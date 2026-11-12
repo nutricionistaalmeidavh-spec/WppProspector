@@ -76,7 +76,7 @@ export const registerBusinessStudioRoutes:FastifyPluginAsync<Deps> = async(app,d
     const client=engine.provider==="anthropic"?new AnthropicLlmClient({apiKey:engine.apiKey!}):
       engine.provider==="compatible"?new OpenAiChatClient("",fetch,engine.endpoint!):new OpenAiChatClient(engine.apiKey!);
     const answer=await client.generate({system:context,messages:[{role:"user",content:message}],model:engine.model,maxTokens:240});
-    return {provider:engine.provider,reply:answer.text,handOff:false,sent:false,
+    return {provider:engine.provider,reply:answer.text,handoff:false,sent:false,
       charged:engine.provider!=="compatible",usage:{input:answer.usage.inputTokens,output:answer.usage.outputTokens}};
   },reply));
   app.get("/api/business/studio/catalog",{preHandler:adminOnly},async()=>({items:studio.getCatalog(),orders:studio.getOrders(),status:studio.commerceStatus()}));
