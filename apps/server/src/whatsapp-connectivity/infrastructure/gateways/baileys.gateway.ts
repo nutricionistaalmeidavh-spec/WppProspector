@@ -101,7 +101,7 @@ export class BaileysGateway implements WhatsAppGatewayPort {
       if (this.sock !== sock || !contacts?.length) return;
       const clean = contacts.flatMap(contact => {
         const jid = contact.id ?? "";
-        if (!/^\\d+@s\\.whatsapp\\.net$/.test(jid)) return [];
+        if (!/^\d+@s\.whatsapp\.net$/.test(jid)) return [];
         return [{ phone: "+" + jid.split("@")[0],
           displayName: (contact.name ?? contact.notify ?? contact.verifiedName ?? "").trim() }];
       });
