@@ -35,7 +35,7 @@ const fmtDate=(date:string)=>new Date(date).toLocaleString("pt-BR",{dateStyle:"s
 const matchNames:Record<Match,string>={equals:"Texto exato",contains:"Contém texto",starts_with:"Começa com"};
 const states:Record<Followup["state"],string>={pending:"Agendado",sending:"Enviando",sent:"Enviado",cancelled:"Cancelado",failed:"Falhou"};
 
-export function AutomationRoute(){
+export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
   const [rules,setRules]=useState<Rule[]>([]);
   const [followups,setFollowups]=useState<Followup[]>([]);
   const [enabled,setEnabled]=useState(false);
@@ -52,7 +52,8 @@ export function AutomationRoute(){
 
   async function refresh(){
     const [r,f]=await Promise.all([
-      apiFetch<{items:Rule[]}>("/automations/rules"),
+      embedded ? apiFetch<{rulesDraft:{items:Rule[]}}>("/business/studio").then(x=>({items:x.rulesDraft.items})) :
+        apiFetch<{items:Rule[]}>("/automations/rules"),
       apiFetch<{items:Followup[];enabled:boolean}>("/automations/followups"),
     ]);
     setRules(r.items);setFollowups(f.items);setEnabled(f.enabled);
@@ -60,14 +61,15 @@ export function AutomationRoute(){
   useEffect(()=>{
     let active=true;
     Promise.all([
-      apiFetch<{items:Rule[]}>("/automations/rules"),
+      embedded ? apiFetch<{rulesDraft:{items:Rule[]}}>("/business/studio").then(x=>({items:x.rulesDraft.items})) :
+        apiFetch<{items:Rule[]}>("/automations/rules"),
       apiFetch<{items:Followup[];enabled:boolean}>("/automations/followups"),
     ]).then(([r,f])=>{
       if(active){setRules(r.items);setFollowups(f.items);setEnabled(f.enabled);}
     }).catch(e=>{if(active)setError(e instanceof Error?e.message:"Não foi possível carregar as automações");})
       .finally(()=>{if(active)setLoading(false);});
     return ()=>{active=false;};
-  },[]);
+  },[embedded]);
 
   function startEdit(rule:Rule){
     setEditId(rule.id);
@@ -86,12 +88,18 @@ export function AutomationRoute(){
     const options=draft.action==="menu"?parseMenuOptions(optionsRaw):[];
     if(draft.action==="menu" && options.length===0)throw new Error("Inclua ao menos uma opção no menu.");
     const body={...draft,options};
-    await apiFetch(editId?"/automations/rules/"+editId:"/automations/rules",{method:editId?"PUT":"POST",body});
-    clearForm();setMessage("Regra salva.");
+    if(embedded){
+      const items=editId?rules.map(rule=>rule.id===editId?{...body,id:editId}:rule):[...rules,body];
+      await apiFetch("/business/studio/rules-draft",{method:"PUT",body:{items}});
+    }else{
+      await apiFetch(editId?"/automations/rules/"+editId:"/automations/rules",{method:editId?"PUT":"POST",body});
+    }
+    clearForm();setMessage(embedded?"Regra salva no rascunho; teste antes de publicar.":"Regra salva.");
   }
 
   return <div className="space-y-6">
-    <PageHeader eyebrow="Atendimento" title="Automações" description="Gatilhos, respostas, menus e follow-ups locais. As regras são aplicadas antes da IA." />
+    {!embedded?<PageHeader eyebrow="Atendimento" title="Automações" description="Gatilhos, respostas, menus e follow-ups locais. As regras são aplicadas antes da IA." />:
+      <p className="text-sm text-muted-foreground">Edite gatilhos e menus nesta central. As mudanças ficam em rascunho até a publicação. Follow-ups continuam sujeitos ao consentimento.</p>}
     {error?<p role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive">{error}</p>:null}
     {message?<p role="status" className="text-sm text-muted-foreground">{message}</p>:null}
     {loading?<p className="text-sm text-muted-foreground">Carregando automações…</p>:null}
@@ -123,8 +131,14 @@ export function AutomationRoute(){
             <p className="mt-1 text-xs text-muted-foreground">{matchNames[rule.match]}: “{rule.trigger}” · {rule.action==="menu"?"Menu":rule.action==="handoff"?"Transferência":"Resposta"}</p>
             <p className="mt-2 whitespace-pre-wrap text-sm">{rule.response}</p>
             <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={()=>startEdit(rule)}>Editar</Button>
-              <Button size="sm" variant="outline" disabled={busy} onClick={()=>void perform(async()=>{await apiFetch("/automations/rules/"+rule.id,{method:"PUT",body:{...rule,enabled:!rule.enabled}});})}>{rule.enabled?"Desativar":"Ativar"}</Button>
-              <Button size="sm" variant="ghost" disabled={busy} onClick={()=>{if(!window.confirm("Excluir esta regra?"))return;void perform(async()=>{await apiFetch("/automations/rules/"+rule.id,{method:"DELETE"});});}}><Trash2 className="h-3 w-3"/>Excluir</Button></div>
+              <Button size="sm" variant="outline" disabled={busy} onClick={()=>void perform(async()=>{
+                if(embedded)await apiFetch("/business/studio/rules-draft",{method:"PUT",body:{items:rules.map(item=>item.id===rule.id?{...rule,enabled:!rule.enabled}:item)}});
+                else await apiFetch("/automations/rules/"+rule.id,{method:"PUT",body:{...rule,enabled:!rule.enabled}});
+              })}>{rule.enabled?"Desativar":"Ativar"}</Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={()=>{if(!window.confirm("Excluir esta regra?"))return;void perform(async()=>{
+                if(embedded)await apiFetch("/business/studio/rules-draft",{method:"PUT",body:{items:rules.filter(item=>item.id!==rule.id)}});
+                else await apiFetch("/automations/rules/"+rule.id,{method:"DELETE"});
+              });}}><Trash2 className="h-3 w-3"/>Excluir</Button></div>
           </div>)}
         </CardContent>
       </Card>
