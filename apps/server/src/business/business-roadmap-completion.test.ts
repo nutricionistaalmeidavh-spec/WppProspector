@@ -62,6 +62,47 @@ describe("Roadmap obrigatório P0–P2",()=>{
       expect((await c.app.inject({method:"POST",url:endpoint,headers:{authorization:"Bearer "+rotated},payload:body})).statusCode).toBe(401);
     }finally{await c.close();}
   });
+
+  it("mantém pedidos e dados pessoais fora da integração, com token revogável",async()=>{
+    const c=await buildAdminTestApp();
+    try{
+      const headers={cookie:await c.login()};
+      const token=(await c.app.inject({method:"POST",url:"/admin/api/business/studio/integration-token",headers})).json().token as string;
+      const auth={authorization:"Bearer "+token};
+      const invalid=await c.app.inject({method:"POST",url:"/admin/integrations/commerce/v1/sync",headers:auth,
+        payload:{products:[{id:"X",name:"Peça X",sku:"X",price:"5",stock:2}],
+          orders:[{id:"1",number:"1",financialStatus:"paid",fulfillmentStatus:"pending",total:"5",createdAt:"2026-11-12T12:00:00Z",phone:"+5516999999999"}]}});
+      expect(invalid.statusCode).toBe(422);
+      const catalog=(await c.app.inject({method:"GET",url:"/admin/api/business/studio/catalog",headers})).json();
+      expect(catalog.items).toHaveLength(0);
+      expect(catalog.orders).toHaveLength(0);
+    }finally{await c.close();}
+  });
+  it("restaura versões de regras sem afetar o estoque ou as credenciais",async()=>{
+    const c=await buildAdminTestApp();
+    try{
+      const headers={cookie:await c.login()};
+      const original={name:"Primeira",match:"equals",trigger:"bom dia",action:"reply",response:"Bom dia!",enabled:true,priority:1,options:[]};
+      await c.app.inject({method:"PUT",url:"/admin/api/business/studio/rules-draft",headers,payload:{items:[original]}});
+      await c.app.inject({method:"POST",url:"/admin/api/business/studio/simulate",headers,payload:{message:"bom dia",allowExternal:false}});
+      expect((await c.app.inject({method:"POST",url:"/admin/api/business/studio/rules-publish",headers})).statusCode).toBe(200);
+      const hist=(await c.app.inject({method:"GET",url:"/admin/api/business/studio",headers})).json().history as Array<{kind:string;revision:number;name:string}>;
+      const baseline=hist.find(item=>item.kind==="rules"&&item.name==="Regras: 0 itens");
+      expect(baseline).toBeDefined();
+      const restored=await c.app.inject({method:"POST",url:"/admin/api/business/studio/rollback",headers,payload:{revision:baseline!.revision,kind:"rules"}});
+      expect(restored.statusCode).toBe(200);
+      expect((await c.app.inject({method:"GET",url:"/admin/api/automations/rules",headers})).json().items).toHaveLength(0);
+    }finally{await c.close();}
+  });
+  it("diagnóstico de regras locais não usa rede nem custa créditos",async()=>{
+    const c=await buildAdminTestApp();
+    try{
+      const headers={cookie:await c.login()};
+      const response=await c.app.inject({method:"POST",url:"/admin/api/business/studio/ai-diagnostics",headers,payload:{allowExternal:false}});
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ok:true,provider:"rules",charged:false});
+    }finally{await c.close();}
+  });
   it("simula regra em rascunho antes de ativar e protege a produção até publicação",async()=>{
     const c=await buildAdminTestApp();
     try{
