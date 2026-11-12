@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { onboardingKey, updateSetup, useOnboardingState, type BusinessProfile, type SetupStep } from "./api";
+import { buildSectorRules, type SectorRuleDraft } from "./sector-rule-templates";
 
 const steps: Array<{id:SetupStep;label:string}> = [
   {id:"business",label:"Empresa"}, {id:"crm",label:"Funil"},
@@ -126,6 +127,12 @@ export function OnboardingRoute() {
   const [initialized,setInitialized]=useState(false);
   const [profile,setProfile]=useState<BusinessProfile>(blank);
   const [channel,setChannel]=useState<"later"|"qr"|"meta">("later");
+  const [replyMode,setReplyMode]=useState<"manual"|"automatic">("manual");
+  const [preparedRules,setPreparedRules]=useState<SectorRuleDraft[]>([]);
+  const [sample,setSample]=useState("agendar");
+  const [simulation,setSimulation]=useState<{rule:string;reply:string;sent:boolean;charged:boolean}|null>(null);
+  const [rulesValidated,setRulesValidated]=useState(false);
+  const [rulesConsent,setRulesConsent]=useState(false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
@@ -175,6 +182,43 @@ export function OnboardingRoute() {
       await queryClient.invalidateQueries({queryKey:onboardingKey});
       setStepIndex(3);
     }catch(e){setError(e instanceof Error?e.message:"Não foi possível verificar a conexão.");}
+    finally{setBusy(false);}
+  }
+  async function prepareRules() {
+    setBusy(true);setError("");setNotice("");
+    try {
+      const existing=await apiFetch<{rulesDraft:{items:unknown[]}} >("/business/studio");
+      if(existing.rulesDraft.items.length>0)
+        throw new Error("Já existem regras cadastradas. Para não sobrescrevê-las, revise-as na Central do atendente virtual.");
+      const items=buildSectorRules(profile);
+      const saved=await apiFetch<{items:SectorRuleDraft[]}>("/business/studio/rules-draft",{method:"PUT",body:{items}});
+      setPreparedRules(saved.items);setSample(items[0]?.trigger??"preço");
+      setRulesValidated(false);setRulesConsent(false);setSimulation(null);
+      setNotice("Regras preparadas em rascunho. Nenhuma resposta automática está ativa.");
+    }catch(e){setError(e instanceof Error?e.message:"Não foi possível preparar as regras.");}
+    finally{setBusy(false);}
+  }
+  async function simulateRules() {
+    setBusy(true);setError("");setSimulation(null);setRulesValidated(false);setRulesConsent(false);
+    try {
+      const result=await apiFetch<{provider:string;rule?:string;reply:string;sent:boolean;charged:boolean}>(
+        "/business/studio/simulate",{method:"POST",body:{message:sample,allowExternal:false}});
+      if(result.provider!=="automation"||!preparedRules.some(r=>r.name===result.rule)||!result.reply.trim())
+        throw new Error("A simulação não acionou uma regra sugerida. Experimente o gatilho mostrado na lista.");
+      setSimulation({rule:result.rule!,reply:result.reply,sent:result.sent,charged:result.charged});
+      setRulesValidated(true);
+    }catch(e){setError(e instanceof Error?e.message:"Falha na simulação.");}
+    finally{setBusy(false);}
+  }
+  async function approveRules() {
+    if(!rulesValidated||!rulesConsent){setError("Simule e aprove explicitamente as regras antes de ativar respostas automáticas.");return;}
+    setBusy(true);setError("");
+    try {
+      await apiFetch("/business/studio/rules-publish",{method:"POST"});
+      await updateSetup("rules","completed");
+      await queryClient.invalidateQueries({queryKey:onboardingKey});
+      setStepIndex(4);setNotice("Regras aprovadas e publicadas. O motor local foi habilitado.");
+    }catch(e){setError(e instanceof Error?e.message:"Não foi possível publicar as regras.");}
     finally{setBusy(false);}
   }
   const input=(key:keyof Pick<BusinessProfile,"name"|"segment"|"description"|"openingHours"|"paymentMethods"|"deliveryPolicy"|"returnPolicy">,label:string,placeholder:string)=>
@@ -228,10 +272,10 @@ export function OnboardingRoute() {
         <p className="text-xs text-muted-foreground">A personalização das etapas não está incluída nesta configuração inicial; você está confirmando as etapas existentes.</p>
       </div>:null}
       {stepIndex===2?<div className="space-y-4">
-        <p className="text-sm text-muted-foreground">A conexão é opcional. Você pode cadastrar leads e oportunidades manualmente sem um canal ativo.</p>
+        <p className="text-sm text-muted-foreground">Conecte o WhatsApp para centralizar conversas e responder manualmente pelo CRM. O motor de respostas automáticas é separado e permanece desligado até aprovação explícita. Sem conexão, leads e oportunidades ainda podem ser administrados.</p>
         <fieldset className="space-y-2"><legend className="mb-2 text-sm font-semibold">Método de conexão</legend>
           {[
-            {id:"later",label:"Configurar depois",detail:"Sem envio de mensagens."},
+            {id:"later",label:"Conectar depois",detail:"O CRM funciona, mas só sincroniza conversas após conectar um WhatsApp."},
             {id:"qr",label:"QR Code local",detail:"Disponível quando a conexão local estiver habilitada."},
             {id:"meta",label:"API oficial da Meta",detail:"Autorização oficial; tarifas da Meta podem ser cobradas."},
           ].map(option=><label key={option.id} className={"flex cursor-pointer gap-3 rounded-lg border p-3 "+(channel===option.id?"border-primary":"")}>
