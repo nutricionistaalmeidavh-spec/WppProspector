@@ -22,6 +22,7 @@ export interface GenerateReplyUseCaseDeps {
   /** Backoff antes da tentativa adicional após uma falha de interpretação. */
   retryBackoffMs?: number;
   automation?: { evaluate(leadPhone: string, text: string): BotDecisionInput | null } | undefined;
+  autoReplyEnabled?: (() => boolean) | undefined;
 }
 
 const sleep = (ms: number): Promise<void> =>
@@ -38,6 +39,7 @@ export class GenerateReplyUseCase {
   private readonly clock: () => Date;
   private readonly retryBackoffMs: number;
   private readonly automation: GenerateReplyUseCaseDeps["automation"];
+  private readonly autoReplyEnabled: () => boolean;
 
   constructor(deps: GenerateReplyUseCaseDeps) {
     this.repository = deps.repository;
@@ -50,6 +52,7 @@ export class GenerateReplyUseCase {
     this.clock = deps.clock ?? (() => new Date());
     this.retryBackoffMs = deps.retryBackoffMs ?? 500;
     this.automation = deps.automation;
+    this.autoReplyEnabled = deps.autoReplyEnabled ?? (() => true);
   }
 
   async execute(leadPhone: string, messageIds: string[]): Promise<void> {
@@ -66,6 +69,14 @@ export class GenerateReplyUseCase {
         leadPhone,
         messageIds,
       });
+      return;
+    }
+
+    // O WhatsApp continua registrando inbound no modo manual, sem responder e
+    // sem deixar lotes pendentes para serem respondidos retroativamente.
+    if (!this.autoReplyEnabled()) {
+      conversation.clearPending(messageIds);
+      await this.repository.save(conversation);
       return;
     }
 
@@ -119,6 +130,12 @@ export class GenerateReplyUseCase {
       return;
     }
 
+    // Se o operador desligou a automação durante a geração, não enviar respostas.
+    if (!this.autoReplyEnabled()) {
+      conversation.clearPending(messageIds);
+      await this.repository.save(conversation);
+      return;
+    }
     conversation.applyDecision(decision, this.clock());
     await this.repository.save(conversation);
 
