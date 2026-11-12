@@ -1,4 +1,6 @@
 import type { FastifyPluginAsync, preHandlerAsyncHookHandler } from "fastify";
+import type { DatabaseSync } from "node:sqlite";
+import { registerBusinessStudioRoutes } from "./business-studio.routes.ts";
 import { ZodError } from "zod";
 import { verify } from "../management/infrastructure/http/session-token.ts";
 import { SESSION_COOKIE_NAME } from "../management/infrastructure/http/session-guard.ts";
@@ -6,6 +8,7 @@ import type { BusinessAiStore } from "./business-ai-store.ts";
 
 export interface BusinessSettingsRouteDeps {
   store: BusinessAiStore;
+  db: DatabaseSync;
   sessionSecret: string;
   clock?: () => Date;
 }
@@ -17,6 +20,7 @@ export const registerBusinessSettingsRoutes: FastifyPluginAsync<BusinessSettings
     if (status.status !== "ok") return reply.code(401).send({error:"unauthorized"});
     if (status.payload.userId) return reply.code(403).send({error:"forbidden"});
   };
+  await app.register(registerBusinessStudioRoutes,{db:deps.db,store:deps.store,sessionSecret:deps.sessionSecret,clock:deps.clock});
   app.get("/api/business/profile", {preHandler:adminOnly}, async () => deps.store.getBusiness());
   app.put("/api/business/profile", {preHandler:adminOnly}, async (request, reply) => {
     try { return deps.store.saveBusiness(request.body); }
