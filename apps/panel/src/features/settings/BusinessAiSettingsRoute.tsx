@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { Link, Navigate } from "react-router-dom";
+import * as XLSX from "xlsx";
+import { ArrowRight, BookOpen, BrainCircuit, CheckCircle2, CircleAlert, FlaskConical, History, Package, Plus, Save, Send, ShieldCheck, Store, Trash2, Workflow } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { useSession } from "@/auth/session";
 import { PageHeader } from "@/components/PageHeader";
@@ -11,188 +12,330 @@ import { Label } from "@/components/ui/label";
 
 type Product = {name:string;price:string;description:string};
 type Faq = {question:string;answer:string};
-type Business = {
-  name:string; segment:string; description:string; openingHours:string;
-  paymentMethods:string; deliveryPolicy:string; returnPolicy:string;
-  additionalInstructions:string; products:Product[]; faq:Faq[];
-};
-type Provider = "rules"|"anthropic"|"openai";
-type AI = { provider:Provider; model:string; hasApiKey:boolean;
-  providers:{anthropic:boolean;openai:boolean}; canStoreKeys:boolean };
-const empty:Business = {name:"",segment:"",description:"",openingHours:"",paymentMethods:"",
-  deliveryPolicy:"",returnPolicy:"",additionalInstructions:"",products:[],faq:[]};
-const defaults:Record<Provider,string> = {rules:"",anthropic:"claude-sonnet-4-5",openai:"gpt-4.1-mini"};
-
-export function BusinessAiSettingsRoute() {
+type Business = {name:string;segment:string;description:string;openingHours:string;paymentMethods:string;deliveryPolicy:string;returnPolicy:string;additionalInstructions:string;products:Product[];faq:Faq[]};
+type Engine = "rules"|"anthropic"|"openai"|"compatible";
+type EngineDraft = {provider:Engine;model:string;endpoint:string;published:boolean;hasApiKey:boolean};
+type Ai = {provider:Engine;model:string;providers:{anthropic:boolean;openai:boolean};canStoreKeys:boolean;endpoint?:string};
+type Revision = {revision:number;name:string;publishedAt:string};
+type Studio = {draft:{profile:Business;published:boolean;updatedAt:string|null};pendingAi:EngineDraft;activeAi:Ai;history:Revision[];commerce:CommerceStatus};
+type CommerceStatus = {enabled:boolean;count:number;orders:number;lastSync:string|null;shopify:{configured:boolean;domain:string;updatedAt:string|null}};
+type CatalogProduct = {id:string;source:string;name:string;sku:string;price:string;stock:number|null;syncedAt:string};
+type CommerceData = {items:CatalogProduct[];orders:Array<{id:string;number:string;financialStatus:string;fulfillmentStatus:string;total:string;createdAt:string}>;status:CommerceStatus};
+type Sample = {reply:string;provider:string;configuredProvider?:Engine;rule?:string;handoff?:boolean;charged:boolean;sent:boolean;usage?:{input:number;output:number}};
+type Stage = "overview"|"company"|"knowledge"|"rules"|"engine"|"lab"|"commerce"|"history";
+const stages: Array<{id:Stage;label:string}> = [
+  {id:"overview",label:"Visão geral"},{id:"company",label:"Minha empresa"},{id:"knowledge",label:"Conhecimento"},
+  {id:"rules",label:"Regras"},{id:"engine",label:"Inteligência"},{id:"lab",label:"Laboratório"},
+  {id:"commerce",label:"E-commerce"},{id:"history",label:"Versões"},
+];
+const empty:Business = {name:"",segment:"",description:"",openingHours:"",paymentMethods:"",deliveryPolicy:"",returnPolicy:"",additionalInstructions:"",products:[],faq:[]};
+const initial:EngineDraft = {provider:"rules",model:"",endpoint:"",published:true,hasApiKey:false};
+const suggested:Record<Engine,string> = {rules:"",anthropic:"claude-sonnet-4-5",openai:"gpt-4.1-mini",compatible:""};
+function readError(error:unknown):string { return error instanceof Error?error.message:"A operação não pôde ser concluída."; }
+function normalize(value:unknown):string { return String(value??"").trim(); }
+function spreadsheetRows(workbook:XLSX.WorkBook):Array<Record<string,unknown>> {
+  const sheet=workbook.Sheets[workbook.SheetNames[0]??""];
+  if(!sheet)throw new Error("Planilha sem primeira aba.");
+  return XLSX.utils.sheet_to_json<Record<string,unknown>>(sheet,{defval:""});
+}
+function column(row:Record<string,unknown>, aliases:string[]):string {
+  for(const [key,value] of Object.entries(row)){
+    const normalized=key.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+    if(aliases.includes(normalized))return normalize(value);
+  }
+  return "";
+}
+export function BusinessAiSettingsRoute(){
   const {role}=useSession();
+  const [stage,setStage]=useState<Stage>("overview");
+  const [studio,setStudio]=useState<Studio|null>(null);
+  const [commerce,setCommerce]=useState<CommerceData|null>(null);
   const [profile,setProfile]=useState<Business>(empty);
-  const [ai,setAi]=useState<AI|null>(null);
-  const [provider,setProvider]=useState<Provider>("rules");
-  const [model,setModel]=useState("");
+  const [engine,setEngine]=useState<EngineDraft>(initial);
   const [apiKey,setApiKey]=useState("");
+  const [shopDomain,setShopDomain]=useState("");
+  const [shopToken,setShopToken]=useState("");
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
+  const [dirty,setDirty]=useState(false);
+  const [engineDirty,setEngineDirty]=useState(false);
+  const [tested,setTested]=useState(false);
+  const [preview,setPreview]=useState<Sample|null>(null);
+  const [question,setQuestion]=useState("Qual é o horário de atendimento?");
+  const [externalConsent,setExternalConsent]=useState(false);
   const [message,setMessage]=useState("");
   const [error,setError]=useState("");
+  const [rollback,setRollback]=useState<number|null>(null);
+  const [importPreview,setImportPreview]=useState<{kind:"catalog"|"faq";items:Array<Record<string,unknown>>}|null>(null);
+
+  async function refresh(){
+    const [state,catalog]=await Promise.all([
+      apiFetch<Studio>("/business/studio"),
+      apiFetch<CommerceData>("/business/studio/catalog"),
+    ]);
+    setStudio(state);setProfile(state.draft.profile);setEngine(state.pendingAi);setCommerce(catalog);
+    setShopDomain(state.commerce.shopify.domain);
+    setDirty(false);setEngineDirty(false);
+  }
   useEffect(()=>{
     if(role!=="admin")return;
-    let active=true;
-    void Promise.all([
-      apiFetch<Business>("/business/profile"),
-      apiFetch<AI>("/business/ai"),
-    ]).then(([business,config])=>{
-      if(!active)return;
-      setProfile(business);setAi(config);setProvider(config.provider);setModel(config.model);
-    }).catch(e=>{if(active)setError(e instanceof Error?e.message:"Não foi possível carregar as configurações.");})
-      .finally(()=>{if(active)setLoading(false);});
-    return ()=>{active=false;};
+    let cancelled=false;
+    Promise.all([apiFetch<Studio>("/business/studio"),apiFetch<CommerceData>("/business/studio/catalog")])
+      .then(([state,catalog])=>{
+        if(cancelled)return;
+        setStudio(state);setProfile(state.draft.profile);setEngine(state.pendingAi);setCommerce(catalog);setShopDomain(state.commerce.shopify.domain);
+      }).catch(e=>{if(!cancelled)setError(readError(e));})
+      .finally(()=>{if(!cancelled)setLoading(false);});
+    return ()=>{cancelled=true;};
   },[role]);
 
-  async function saveBusiness(){
-    setBusy(true);setMessage("");setError("");
-    try{
-      const saved=await apiFetch<Business>("/business/profile",{method:"PUT",body:profile});
-      setProfile(saved);setMessage("Informações da loja salvas. O motor usará estes dados no próximo atendimento.");
-    }catch(e){setError(e instanceof Error?e.message:"Falha ao salvar a loja.");}
+  async function action(doWork:()=>Promise<unknown>, success:string){
+    setBusy(true);setError("");setMessage("");
+    try {await doWork();await refresh();setMessage(success);}
+    catch(e){setError(readError(e));}
     finally{setBusy(false);}
   }
-  async function saveAI(clearKey=false){
-    setBusy(true);setMessage("");setError("");
-    try{
-      const saved=await apiFetch<AI>("/business/ai",{
-        method:"PUT",body:{provider,model,apiKey:clearKey?"":apiKey,clearKey},
-      });
-      setAi(saved);setProvider(saved.provider);setModel(saved.model);setApiKey("");
-      setMessage(clearKey?"Chave excluída. Motor gratuito reativado.":
-        "Motor configurado. Alterações entram em vigor no próximo atendimento.");
-    }catch(e){setError(e instanceof Error?e.message:"Não foi possível salvar o provedor.");}
-    finally{setBusy(false);}
+  function change<K extends keyof Business>(key:K,value:Business[K]){
+    setProfile(current=>({...current,[key]:value}));setDirty(true);setTested(false);setPreview(null);
   }
-  const formField=(key: keyof Pick<Business,"name"|"segment"|"description"|"openingHours"|"paymentMethods"|"deliveryPolicy"|"returnPolicy"|"additionalInstructions">,title:string,placeholder:string,multiline=false)=>(
+  const field=(key:keyof Pick<Business,"name"|"segment"|"description"|"openingHours"|"paymentMethods"|"deliveryPolicy"|"returnPolicy"|"additionalInstructions">,label:string,placeholder:string,large=false)=>(
     <div className="space-y-1.5" key={key}>
-      <Label htmlFor={"business-"+key}>{title}</Label>
-      {multiline?
-        <textarea id={"business-"+key} className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm"
-          value={profile[key]} placeholder={placeholder} onChange={e=>setProfile(current=>({...current,[key]:e.target.value}))}/>:
-        <Input id={"business-"+key} value={profile[key]} placeholder={placeholder}
-          onChange={e=>setProfile(current=>({...current,[key]:e.target.value}))}/>}
+      <Label htmlFor={"studio-"+key}>{label}</Label>
+      {large?<textarea id={"studio-"+key} className="min-h-24 w-full rounded-lg border bg-background px-3 py-2 text-sm" value={profile[key]} placeholder={placeholder} onChange={e=>change(key,e.target.value)}/>:
+        <Input id={"studio-"+key} value={profile[key]} placeholder={placeholder} onChange={e=>change(key,e.target.value)}/>}
     </div>
   );
+  async function parseSheet(file:File,kind:"catalog"|"faq"){
+    setError("");
+    try{
+      if(file.size>8*1024*1024)throw new Error("Limite de 8 MB por planilha.");
+      const bytes=await file.arrayBuffer();
+      const workbook=XLSX.read(new Uint8Array(bytes),{type:"array"});
+      const rows=spreadsheetRows(workbook).slice(0,2500);
+      if(!rows.length)throw new Error("Planilha vazia.");
+      if(kind==="catalog"){
+        const items=rows.map((row,i)=>{
+          const name=column(row,["nome","produto","name","titulo"]);
+          const stockValue=column(row,["estoque","quantidade","stock"]);
+          const stock=stockValue?Number(stockValue.replace(",", ".")):null;
+          if(!name)throw new Error("Produto sem nome na linha "+(i+2));
+          if(stock!==null && (!Number.isInteger(stock)||stock<0))throw new Error("Estoque inválido na linha "+(i+2));
+          return {id:column(row,["sku","codigo","id"])||"linha-"+(i+2),name,
+            sku:column(row,["sku","codigo"]),price:column(row,["preco","price","valor"]),stock};
+        });
+        setImportPreview({kind,items});
+      }else{
+        const items=rows.map((row,i)=>{
+          const question=column(row,["pergunta","question"]);
+          const answer=column(row,["resposta","answer"]);
+          if(!question||!answer)throw new Error("Pergunta ou resposta ausente na linha "+(i+2));
+          return {question,answer};
+        });
+        if(profile.faq.length+items.length>50)throw new Error("A base atual aceita no máximo 50 perguntas frequentes.");
+        setImportPreview({kind,items});
+      }
+    }catch(e){setError(readError(e));setImportPreview(null);}
+  }
+  async function applyImport(){
+    if(!importPreview)return;
+    if(importPreview.kind==="catalog"){
+      const items=importPreview.items;
+      await action(async()=>apiFetch("/business/studio/catalog/import",{method:"POST",body:{items}}),
+        "Catálogo importado. Ative a fonte antes de permitir que o atendente utilize esses dados.");
+    }else{
+      const newFaq=importPreview.items.map(row=>({question:String(row.question),answer:String(row.answer)}));
+      change("faq",[...profile.faq,...newFaq]);setMessage("FAQ incluída no rascunho. Salve e publique para entrar em vigor.");
+    }
+    setImportPreview(null);
+  }
   if(role&&role!=="admin")return <Navigate to="/settings" replace/>;
+
+  const progress = [
+    {label:"Perfil da empresa",ready:Boolean(profile.name.trim())},
+    {label:"Conhecimento",ready:profile.products.length>0||profile.faq.length>0||Boolean(commerce?.status.count)},
+    {label:"Regras",ready:true},
+    {label:"Motor",ready:Boolean(studio?.activeAi)},
+    {label:"Validação",ready:tested},
+  ];
   return <div className="space-y-5">
-    <PageHeader eyebrow="Configurações" title="Motor de Regras / Inteligência Artificial"
-      description="Cadastre os dados da sua loja e escolha se deseja usar o motor local gratuito ou uma API opcional." />
-    {loading?<p className="text-sm text-muted-foreground">Carregando configurações…</p>:null}
-    {error?<p role="alert" className="rounded-md border border-destructive/40 px-4 py-3 text-sm text-destructive">{error}</p>:null}
-    {message?<p role="status" className="rounded-md border px-4 py-3 text-sm">{message}</p>:null}
-    <Card>
-      <CardHeader><CardTitle className="text-base">Informações da loja</CardTitle>
-        <p className="text-sm text-muted-foreground">Esses dados são a fonte oficial das respostas automáticas, sem informações de outras empresas.</p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          {formField("name","Nome da loja","Ex.: Minha loja")}
-          {formField("segment","Segmento","Ex.: comércio de roupas")}
-        </div>
-        {formField("description","O que a empresa oferece","Produtos, serviços e diferenciais",true)}
-        <div className="grid gap-4 md:grid-cols-2">
-          {formField("openingHours","Horário de atendimento","Ex.: segunda a sábado, 9h às 18h")}
-          {formField("paymentMethods","Formas de pagamento","Ex.: Pix, débito e crédito")}
-        </div>
-        {formField("deliveryPolicy","Entregas e frete","Prazo, área atendida e condições",true)}
-        {formField("returnPolicy","Trocas, devoluções e garantias","Política oficial da loja",true)}
-        {formField("additionalInstructions","Orientações de atendimento","Tom de voz e informações que o atendente pode usar",true)}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold">Produtos e serviços</h3>
-            <Button type="button" size="sm" variant="outline" disabled={profile.products.length>=100}
-              onClick={()=>setProfile(x=>({...x,products:[...x.products,{name:"",price:"",description:""}]}))}>
-              <Plus className="mr-1 h-4 w-4"/>Adicionar
-            </Button>
-          </div>
-          {profile.products.length===0?<p className="text-sm text-muted-foreground">Nenhum produto cadastrado. Não serão inventados preços.</p>:null}
-          {profile.products.map((p,index)=><div key={index} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_140px_1fr_auto]">
-            <Input aria-label={"Produto "+(index+1)} placeholder="Nome" value={p.name}
-              onChange={e=>setProfile(x=>({...x,products:x.products.map((v,i)=>i===index?{...v,name:e.target.value}:v)}))}/>
-            <Input aria-label={"Preço "+(index+1)} placeholder="Preço" value={p.price}
-              onChange={e=>setProfile(x=>({...x,products:x.products.map((v,i)=>i===index?{...v,price:e.target.value}:v)}))}/>
-            <Input aria-label={"Descrição "+(index+1)} placeholder="Descrição" value={p.description}
-              onChange={e=>setProfile(x=>({...x,products:x.products.map((v,i)=>i===index?{...v,description:e.target.value}:v)}))}/>
-            <Button type="button" variant="ghost" size="sm" aria-label={"Excluir produto "+(index+1)}
-              onClick={()=>setProfile(x=>({...x,products:x.products.filter((_,i)=>i!==index)}))}>
-              <Trash2 className="h-4 w-4"/>
-            </Button>
+    <PageHeader eyebrow="Configurações" title="Central do atendente virtual"
+      description="Prepare o conhecimento, as regras e a inteligência da loja antes de ativar o atendimento."/>
+    {error?<div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div>:null}
+    {message?<div role="status" className="rounded-lg border bg-card px-4 py-3 text-sm">{message}</div>:null}
+    {loading?<div role="status" className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">Carregando configurações…</div>:null}
+    {!loading&&studio?<div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="surface-panel p-4"><p className="text-xs text-muted-foreground">Atendimento ativo</p><p className="mt-1 font-semibold">{studio.activeAi.provider==="rules"?"Regras locais":studio.activeAi.provider==="compatible"?"Modelo próprio":studio.activeAi.provider}</p><p className="text-xs text-muted-foreground">A configuração publicada continua válida</p></div>
+        <div className="surface-panel p-4"><p className="text-xs text-muted-foreground">Preparação</p><p className="mt-1 font-semibold">{studio.draft.published&&!dirty?"Sem alterações pendentes":"Rascunho em edição"}</p><p className="text-xs text-muted-foreground">Publicação sempre explícita</p></div>
+        <div className="surface-panel p-4"><p className="text-xs text-muted-foreground">Fonte e-commerce</p><p className="mt-1 font-semibold">{commerce?.status.enabled?"Ativa":"Desligada"}</p><p className="text-xs text-muted-foreground">{commerce?.status.count??0} itens importados</p></div>
+      </div>
+      <nav aria-label="Etapas da configuração" className="flex gap-2 overflow-x-auto rounded-xl border bg-card p-2">
+        {stages.map(item=><Button key={item.id} size="sm" variant={stage===item.id?"default":"ghost"} className="shrink-0" onClick={()=>setStage(item.id)}>{item.label}</Button>)}
+      </nav>
+
+      {stage==="overview"?<div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,1fr)]">
+        <Card><CardHeader><CardTitle className="text-base">Prepare o atendimento em etapas</CardTitle></CardHeader>
+          <CardContent className="space-y-3">{progress.map((step,index)=><div key={step.label} className="flex items-center gap-3 rounded-lg border p-3">
+            {step.ready?<CheckCircle2 className="h-5 w-5 text-primary"/>:<span className="flex h-5 w-5 items-center justify-center rounded-full border text-xs">{index+1}</span>}
+            <span className="flex-1 text-sm font-medium">{step.label}</span><span className="text-xs text-muted-foreground">{step.ready?"Preparado":"Pendente"}</span>
           </div>)}
-        </div>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold">Perguntas frequentes</h3>
-            <Button type="button" size="sm" variant="outline" disabled={profile.faq.length>=50}
-              onClick={()=>setProfile(x=>({...x,faq:[...x.faq,{question:"",answer:""}]}))}>
-              <Plus className="mr-1 h-4 w-4"/>Adicionar
-            </Button>
-          </div>
-          {profile.faq.map((faq,index)=><div key={index} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_1fr_auto]">
-            <Input aria-label={"Pergunta "+(index+1)} placeholder="Pergunta" value={faq.question}
-              onChange={e=>setProfile(x=>({...x,faq:x.faq.map((v,i)=>i===index?{...v,question:e.target.value}:v)}))}/>
-            <Input aria-label={"Resposta "+(index+1)} placeholder="Resposta oficial" value={faq.answer}
-              onChange={e=>setProfile(x=>({...x,faq:x.faq.map((v,i)=>i===index?{...v,answer:e.target.value}:v)}))}/>
-            <Button type="button" size="sm" variant="ghost" aria-label={"Excluir pergunta "+(index+1)}
-              onClick={()=>setProfile(x=>({...x,faq:x.faq.filter((_,i)=>i!==index)}))}>
-              <Trash2 className="h-4 w-4"/>
-            </Button>
-          </div>)}
-        </div>
-        <Button type="button" disabled={busy||loading} onClick={()=>void saveBusiness()}>
-          <Save className="mr-2 h-4 w-4"/>Salvar informações da loja
-        </Button>
-      </CardContent>
-    </Card>
-    <Card>
-      <CardHeader><CardTitle className="text-base">Motor de atendimento</CardTitle>
-        <p className="text-sm text-muted-foreground">Padrão: gratuito, local e open source. APIs comerciais só são ativadas com sua escolha e chave própria.</p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="ai-provider">Provedor</Label>
-            <select id="ai-provider" className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-              value={provider} onChange={e=>{
-                const next=e.target.value as Provider;setProvider(next);setModel(defaults[next]);setApiKey("");
-              }}>
-              <option value="rules">Motor de regras local — R$ 0</option>
-              <option value="anthropic">Anthropic — chave própria (opcional)</option>
-              <option value="openai">OpenAI — chave própria (opcional)</option>
-            </select>
-          </div>
-          {provider!=="rules"?<div className="space-y-1.5">
-            <Label htmlFor="ai-model">Modelo</Label>
-            <Input id="ai-model" value={model} placeholder={defaults[provider]} onChange={e=>setModel(e.target.value)}/>
+          <Button onClick={()=>setStage("company")}>Continuar configuração <ArrowRight className="h-4 w-4"/></Button>
+          </CardContent>
+        </Card>
+        <Card><CardHeader><CardTitle className="text-base">Como funciona</CardTitle></CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>O motor de regras é local, gratuito e funciona sem qualquer chave externa.</p>
+            <p>Os dados da empresa e as regras cadastradas orientam as respostas. Informações ausentes devem ser encaminhadas à equipe.</p>
+            <p>Salve um rascunho, teste no laboratório e publique quando estiver correto.</p>
+            <Button variant="outline" onClick={()=>setStage("lab")}>Abrir laboratório <FlaskConical className="h-4 w-4"/></Button>
+          </CardContent>
+        </Card>
+      </div>:null}
+
+      {stage==="company"||stage==="knowledge"?<div className="space-y-4">
+        <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base">{stage==="company"?<Store className="h-4 w-4"/>:<BookOpen className="h-4 w-4"/>}{stage==="company"?"Identidade e políticas da empresa":"Base de conhecimento"}</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            {stage==="company"?<>
+              <div className="grid gap-4 md:grid-cols-2">{field("name","Nome da loja","Nome comercial")}{field("segment","Segmento","Ex.: moda e acessórios")}</div>
+              {field("description","O que a empresa oferece","Descreva produtos e serviços",true)}
+              <div className="grid gap-4 md:grid-cols-2">{field("openingHours","Horário","Seg a sáb, 9h–18h")}{field("paymentMethods","Pagamentos","Pix, cartão")}</div>
+              {field("deliveryPolicy","Entregas","Abrangência, prazos e condições",true)}
+              {field("returnPolicy","Trocas e devoluções","Política vigente",true)}
+              {field("additionalInstructions","Orientações adicionais","Informações complementares verificadas",true)}
+            </>:<>
+              <div className="flex items-center justify-between"><strong className="text-sm">Produtos e serviços ({profile.products.length}/100)</strong>
+                <Button size="sm" variant="outline" disabled={profile.products.length>=100} onClick={()=>change("products",[...profile.products,{name:"",price:"",description:""}])}><Plus className="h-4 w-4"/>Produto</Button></div>
+              {profile.products.map((p,i)=><div key={i} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_120px_1fr_auto]">
+                <Input aria-label={"Nome do produto "+(i+1)} placeholder="Nome" value={p.name} onChange={e=>change("products",profile.products.map((v,j)=>i===j?{...v,name:e.target.value}:v))}/>
+                <Input aria-label={"Preço do produto "+(i+1)} placeholder="Preço" value={p.price} onChange={e=>change("products",profile.products.map((v,j)=>i===j?{...v,price:e.target.value}:v))}/>
+                <Input aria-label={"Descrição do produto "+(i+1)} placeholder="Descrição" value={p.description} onChange={e=>change("products",profile.products.map((v,j)=>i===j?{...v,description:e.target.value}:v))}/>
+                <Button variant="ghost" size="icon" aria-label={"Excluir produto "+(i+1)} onClick={()=>change("products",profile.products.filter((_,j)=>j!==i))}><Trash2 className="h-4 w-4"/></Button>
+              </div>)}
+              <div className="flex items-center justify-between"><strong className="text-sm">Perguntas frequentes ({profile.faq.length}/50)</strong>
+                <Button size="sm" variant="outline" disabled={profile.faq.length>=50} onClick={()=>change("faq",[...profile.faq,{question:"",answer:""}])}><Plus className="h-4 w-4"/>Pergunta</Button></div>
+              {profile.faq.map((f,i)=><div key={i} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_1fr_auto]">
+                <Input aria-label={"Pergunta "+(i+1)} placeholder="Pergunta" value={f.question} onChange={e=>change("faq",profile.faq.map((v,j)=>i===j?{...v,question:e.target.value}:v))}/>
+                <Input aria-label={"Resposta "+(i+1)} placeholder="Resposta oficial" value={f.answer} onChange={e=>change("faq",profile.faq.map((v,j)=>i===j?{...v,answer:e.target.value}:v))}/>
+                <Button variant="ghost" size="icon" aria-label={"Excluir pergunta "+(i+1)} onClick={()=>change("faq",profile.faq.filter((_,j)=>j!==i))}><Trash2 className="h-4 w-4"/></Button>
+              </div>)}
+              <div className="grid gap-3 border-t pt-4 sm:grid-cols-2">
+                <label className="space-y-1 text-sm"><span className="font-medium">Importar FAQ (CSV/XLSX)</span><Input type="file" accept=".csv,.xlsx,.xls" onChange={e=>{const file=e.target.files?.[0];if(file)void parseSheet(file,"faq");e.target.value="";}}/><span className="block text-xs text-muted-foreground">Colunas: pergunta, resposta</span></label>
+                <label className="space-y-1 text-sm"><span className="font-medium">Importar catálogo maior</span><Input type="file" accept=".csv,.xlsx,.xls" onChange={e=>{const file=e.target.files?.[0];if(file)void parseSheet(file,"catalog");e.target.value="";}}/><span className="block text-xs text-muted-foreground">Colunas: nome, sku, preço, estoque</span></label>
+              </div>
+            </>}
+            {importPreview?<div className="rounded-lg border bg-muted/40 p-3 text-sm"><p className="font-semibold">Prévia da importação: {importPreview.items.length} linhas</p>
+              <p className="mt-1 text-xs text-muted-foreground">Amostra: {importPreview.items.slice(0,3).map(item=>String(item.name??item.question)).join(", ")}</p>
+              <div className="mt-3 flex gap-2"><Button disabled={busy} size="sm" onClick={()=>void applyImport()}>Confirmar importação</Button><Button size="sm" variant="outline" onClick={()=>setImportPreview(null)}>Cancelar</Button></div>
+            </div>:null}
+            <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+              <Button disabled={busy||!dirty} onClick={()=>void action(()=>apiFetch("/business/studio/draft",{method:"PUT",body:profile}),"Rascunho salvo. Os clientes ainda recebem a configuração publicada.")}><Save className="h-4 w-4"/>Salvar rascunho</Button>
+              <Button variant="outline" disabled={busy||dirty||studio.draft.published||!tested} onClick={()=>void action(()=>apiFetch("/business/studio/publish",{method:"POST"}),"Configuração publicada para os próximos atendimentos.")}><Send className="h-4 w-4"/>Publicar informações</Button>
+              <span className="text-xs text-muted-foreground">{dirty?"Salve antes de publicar":studio.draft.published?"Sem rascunho pendente":tested?"Simulação concluída":"Teste o rascunho no laboratório antes de publicar"}</span>
+              {!studio.draft.published&&!tested?<Button size="sm" variant="ghost" onClick={()=>setStage("lab")}>Testar agora <ArrowRight className="h-3 w-3"/></Button>:null}
+            </div>
+          </CardContent>
+        </Card>
+      </div>:null}
+
+      {stage==="rules"?<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-5 w-5"/>Regras de atendimento</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">As automações determinísticas têm prioridade sobre o motor de IA. Configure gatilhos, respostas, menus e encaminhamento humano em uma única área, sem duplicar regras no perfil.</p>
+          <div className="rounded-lg border bg-muted/30 p-4 text-sm"><p className="font-semibold">Ordem de decisão</p><p className="mt-1">1. Regras automáticas → 2. Motor selecionado → 3. Encaminhamento humano quando não souber.</p></div>
+          <Link to="/automations" className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted">Gerenciar automações <ArrowRight className="h-4 w-4"/></Link>
+        </CardContent>
+      </Card>:null}
+
+      {stage==="engine"?<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><BrainCircuit className="h-5 w-5"/>Inteligência do atendimento</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">O motor gratuito é o padrão. APIs pagas são opcionais e exigem chave própria. Nenhum custo externo é ativado automaticamente.</p>
+          <fieldset className="space-y-2"><legend className="mb-2 text-sm font-medium">Selecione um modo</legend>
+            {([
+              ["rules","Regras locais — R$ 0","Determinístico, sem chamadas externas."],
+              ["openai","OpenAI — API opcional","Modelo comercial e cobrança do provedor."],
+              ["anthropic","Anthropic — API opcional","Modelo comercial e cobrança do provedor."],
+              ["compatible","Servidor próprio compatível — R$ 0 de API","Endpoint Chat Completions local ou HTTPS autohospedado."],
+            ] as Array<[Engine,string,string]>).map(([id,label,help])=><label key={id} className={"flex cursor-pointer items-start gap-3 rounded-lg border p-3 "+(engine.provider===id?"border-primary bg-accent/40":"")}>
+              <input type="radio" className="mt-1" name="engine" checked={engine.provider===id} onChange={()=>{setEngine({...engine,provider:id,model:suggested[id],endpoint:id==="compatible"?engine.endpoint:""});setEngineDirty(true);setTested(false);setExternalConsent(false);}}/>
+              <span><strong className="block text-sm">{label}</strong><span className="text-xs text-muted-foreground">{help}</span></span>
+            </label>)}
+          </fieldset>
+          {engine.provider!=="rules"?<div className="space-y-3">
+            <div className="space-y-1"><Label htmlFor="engine-model">Identificador do modelo</Label><Input id="engine-model" value={engine.model} placeholder="Informe o modelo" onChange={e=>{setEngine({...engine,model:e.target.value});setEngineDirty(true);setTested(false);}}/></div>
+            {engine.provider==="compatible"?<div className="space-y-1"><Label htmlFor="engine-endpoint">Endpoint do seu servidor</Label><Input id="engine-endpoint" type="url" value={engine.endpoint} placeholder="http://127.0.0.1:8000/v1/chat/completions" onChange={e=>{setEngine({...engine,endpoint:e.target.value});setEngineDirty(true);setTested(false);}}/><p className="text-xs text-muted-foreground">Sem modelo embutido; você disponibiliza a inferência no servidor próprio.</p></div>:
+              <div className="space-y-1"><Label htmlFor="engine-api-key">Chave privada de API</Label><Input id="engine-api-key" type="password" autoComplete="off" value={apiKey} placeholder={engine.hasApiKey?"Chave já armazenada — mantenha em branco para conservar":"Insira uma chave nova"} onChange={e=>{setApiKey(e.target.value);setEngineDirty(true);setTested(false);}}/><p className="text-xs text-muted-foreground">Armazenada cifrada no servidor, nunca exibida novamente. Testes externos podem consumir créditos.</p></div>}
           </div>:null}
-        </div>
-        {provider!=="rules"?<>
-          <div className="space-y-1.5">
-            <Label htmlFor="ai-api-key">Chave API ({provider==="anthropic"?"Anthropic":"OpenAI"})</Label>
-            <Input id="ai-api-key" type="password" value={apiKey} autoComplete="off"
-              placeholder={ai?.providers[provider]?"Chave salva — deixe em branco para manter":"Cole sua chave de API"}
-              onChange={e=>setApiKey(e.target.value)}/>
-            <p className="text-xs text-muted-foreground">A chave é enviada apenas ao servidor local e armazenada cifrada. Nunca aparece novamente nesta tela.</p>
+          <div className="flex flex-wrap gap-2 border-t pt-4"><Button disabled={busy||!engineDirty} onClick={()=>void action(async()=>{await apiFetch("/business/studio/ai-draft",{method:"PUT",body:{provider:engine.provider,model:engine.model,endpoint:engine.endpoint,apiKey}});setApiKey("");setTested(false);},"Motor salvo como rascunho; atendimento real não foi alterado.")}><Save className="h-4 w-4"/>Salvar motor em rascunho</Button>
+            <Button variant="outline" disabled={busy||engineDirty||studio.pendingAi.published||!tested||preview?.provider!==studio.pendingAi.provider} onClick={()=>void action(()=>apiFetch("/business/studio/ai-publish",{method:"POST"}),"Motor publicado e ativado nos próximos atendimentos.")}><ShieldCheck className="h-4 w-4"/>Ativar motor testado</Button>
+            <Button variant="ghost" onClick={()=>setStage("lab")}>Testar <FlaskConical className="h-4 w-4"/></Button>
           </div>
-          {!ai?.canStoreKeys?<p role="alert" className="text-sm text-destructive">Armazenamento de credenciais indisponível neste servidor.</p>:null}
-        </>:null}
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" disabled={busy||loading||(provider!=="rules"&&!ai?.canStoreKeys)}
-            onClick={()=>void saveAI()}><Save className="mr-2 h-4 w-4"/>Salvar motor</Button>
-          {provider!=="rules"&&ai?.providers[provider]?<Button type="button" variant="outline" disabled={busy}
-            onClick={()=>{if(window.confirm("Excluir a chave desta API e voltar ao motor gratuito?"))void saveAI(true);}}>
-            <Trash2 className="mr-2 h-4 w-4"/>Excluir chave
-          </Button>:null}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          As automações determinísticas cadastradas em Atendimento → Automações continuam prioritárias.
-          API externa pode gerar custos do próprio provedor. O CRM funciona sem nenhuma chave.
-        </p>
-      </CardContent>
-    </Card>
+          <p className="text-xs text-muted-foreground">Ativo: {studio.activeAi.provider}. Pendente: {studio.pendingAi.published?"nenhum":studio.pendingAi.provider}.</p>
+        </CardContent>
+      </Card>:null}
+
+      {stage==="lab"?<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+        <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><FlaskConical className="h-5 w-5"/>Laboratório de testes</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">Não envia WhatsApp, não modifica leads e não agenda follow-ups. Testa as regras e o rascunho de conhecimento.</p>
+            <div className="space-y-1"><Label htmlFor="lab-question">Mensagem fictícia de um cliente</Label><textarea id="lab-question" className="min-h-24 w-full rounded-lg border bg-background px-3 py-2 text-sm" value={question} onChange={e=>{setQuestion(e.target.value);setTested(false);}}/></div>
+            {engine.provider!=="rules"?<label className="flex gap-2 text-sm"><input type="checkbox" checked={externalConsent} onChange={e=>setExternalConsent(e.target.checked)}/><span>Autorizar este teste com {engine.provider==="compatible"?"meu servidor":"API externa (pode gerar cobrança)"} e enviar os dados da simulação ao provedor selecionado.</span></label>:null}
+            <Button disabled={busy||dirty||engineDirty||!question.trim()} onClick={()=>void action(async()=>{
+              const result=await apiFetch<Sample>("/business/studio/simulate",{method:"POST",body:{message:question,allowExternal:externalConsent}});
+              setPreview(result);setTested(true);
+            },"Simulação concluída sem enviar mensagem ao WhatsApp.")}><FlaskConical className="h-4 w-4"/>Executar simulação</Button>
+            {(dirty||engineDirty)?<p className="text-xs text-muted-foreground">Salve as edições em rascunho para testar exatamente a configuração que será publicada.</p>:null}
+            {preview?<div className="space-y-2 rounded-xl border bg-muted/35 p-4"><p className="text-xs font-semibold">Resposta simulada</p><p className="whitespace-pre-wrap text-sm">{preview.reply||"Sem resposta automática."}</p><div className="border-t pt-2 text-xs text-muted-foreground">Motor: {preview.provider} · Encaminhamento: {preview.handoff?"sim":"não"} · WhatsApp: não enviado{preview.charged?" · API externa autorizada":""}</div></div>:null}
+          </CardContent>
+        </Card>
+        <Card><CardHeader><CardTitle className="text-base">Diagnóstico</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
+          <p>Ao testar, confirme preços, horários, políticas e o encaminhamento de perguntas sem resposta.</p>
+          <p>O simulador executa regras sem criar sessões de menu. Testes pagos só ocorrem mediante autorização marcada.</p>
+          {preview?<div className="rounded-lg border p-3"><p className="font-semibold">{preview.provider==="rules"?"Motor local":preview.provider}</p><p className="mt-1 text-xs text-muted-foreground">Resposta gerada, sem disparo. {preview.rule?"Regra: "+preview.rule:""} </p></div>:null}
+          <Button size="sm" variant="outline" onClick={()=>setStage(studio.draft.published?"engine":"company")}>Voltar para publicar <ArrowRight className="h-4 w-4"/></Button>
+        </CardContent></Card>
+      </div>:null}
+
+      {stage==="commerce"?<div className="space-y-4">
+        <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Package className="h-5 w-5"/>Catálogo e pedidos</CardTitle></CardHeader>
+          <CardContent className="space-y-4"><p className="text-sm text-muted-foreground">O catálogo importado ou sincronizado fica no SQLite da instalação. Pedidos são visíveis somente ao administrador e não entram nas respostas do bot.</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Itens cadastrados</p><p className="text-xl font-semibold">{commerce?.status.count??0}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Pedidos consultados</p><p className="text-xl font-semibold">{commerce?.status.orders??0}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Usar catálogo no atendimento</p><p className="font-semibold">{commerce?.status.enabled?"Ativo":"Desligado"}</p></div>
+            </div>
+            <div className="flex flex-wrap gap-2"><Button disabled={busy||!commerce?.status.count} onClick={()=>void action(()=>apiFetch("/business/studio/catalog/enabled",{method:"PUT",body:{enabled:!commerce?.status.enabled}}),commerce?.status.enabled?"Fonte desligada.":"Catálogo publicado para as respostas do atendente.")}>{commerce?.status.enabled?"Desativar fonte no bot":"Ativar catálogo no bot"}</Button>
+              <Button variant="outline" onClick={()=>setStage("knowledge")}>Importar planilha <ArrowRight className="h-4 w-4"/></Button></div>
+            <p className="text-xs text-muted-foreground">Última atualização: {commerce?.status.lastSync?new Date(commerce.status.lastSync).toLocaleString("pt-BR"):"não realizada"}. Estoque pode ficar desatualizado; respostas não devem prometer disponibilidade.</p>
+          </CardContent>
+        </Card>
+        <Card><CardHeader><CardTitle className="text-base">Shopify (somente leitura)</CardTitle></CardHeader>
+          <CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Opcional. Use o domínio myshopify.com e um token Admin API com permissões read_products, read_inventory e read_orders. A sincronização é manual e consulta até 50 produtos e 50 pedidos por execução.</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1"><Label htmlFor="shop-domain">Domínio da loja</Label><Input id="shop-domain" value={shopDomain} placeholder="sua-loja.myshopify.com" onChange={e=>setShopDomain(e.target.value)}/></div>
+              <div className="space-y-1"><Label htmlFor="shop-token">Token privado Shopify</Label><Input id="shop-token" type="password" autoComplete="off" placeholder={commerce?.status.shopify.configured?"Token salvo — informe outro apenas para substituir":"Token de acesso do Admin"} value={shopToken} onChange={e=>setShopToken(e.target.value)}/></div>
+            </div>
+            <div className="flex flex-wrap gap-2"><Button disabled={busy||!shopToken.trim()} onClick={()=>void action(async()=>{await apiFetch("/business/studio/shopify",{method:"PUT",body:{domain:shopDomain,token:shopToken}});setShopToken("");},"Conexão armazenada com credencial cifrada. Nenhuma sincronização iniciada.")}>Salvar conexão</Button>
+              <Button variant="outline" disabled={busy||!commerce?.status.shopify.configured} onClick={()=>void action(()=>apiFetch("/business/studio/shopify/sync",{method:"POST"}),"Produtos e pedidos sincronizados da Shopify. Confira a amostra antes de ativar o catálogo.")}>Sincronizar agora</Button>
+              <Button variant="ghost" disabled={busy||!commerce?.status.shopify.configured} onClick={()=>void action(()=>apiFetch("/business/studio/shopify",{method:"DELETE"}),"Token Shopify removido. Dados importados foram preservados.")}>Desconectar</Button>
+            </div>
+          </CardContent>
+        </Card>
+        <Card><CardHeader><CardTitle className="text-base">Amostra dos dados sincronizados</CardTitle></CardHeader><CardContent className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-2"><p className="text-sm font-semibold">Produtos</p>{commerce?.items.length?commerce.items.slice(0,10).map(item=><div key={item.id} className="flex justify-between gap-2 border-b py-2 text-xs"><span className="min-w-0 truncate">{item.name} {item.sku?"· "+item.sku:""}</span><span className="whitespace-nowrap text-muted-foreground">{item.stock??"?"} un.</span></div>):<p className="text-xs text-muted-foreground">Nenhum produto importado.</p>}</div>
+          <div className="space-y-2"><p className="text-sm font-semibold">Pedidos (sem dados pessoais)</p>{commerce?.orders.length?commerce.orders.slice(0,10).map(item=><div key={item.id} className="flex justify-between gap-2 border-b py-2 text-xs"><span>{item.number}</span><span className="text-muted-foreground">{item.fulfillmentStatus}</span></div>):<p className="text-xs text-muted-foreground">Nenhum pedido sincronizado.</p>}</div>
+        </CardContent></Card>
+      </div>:null}
+
+      {stage==="history"?<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><History className="h-5 w-5"/>Histórico de publicação</CardTitle></CardHeader>
+        <CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Restaura as informações publicadas da loja. Credenciais de API e inventário sincronizado não são alterados.</p>
+          {studio.history.length===0?<p className="rounded-lg border p-4 text-sm text-muted-foreground">Ainda não há publicações nesta central.</p>:null}
+          {studio.history.map(revision=><div key={revision.revision} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+            <div><p className="text-sm font-semibold">Versão {revision.revision} · {revision.name}</p><p className="text-xs text-muted-foreground">{new Date(revision.publishedAt).toLocaleString("pt-BR")}</p></div>
+            {rollback===revision.revision?<div className="flex gap-2"><Button size="sm" variant="outline" onClick={()=>setRollback(null)}>Cancelar</Button><Button size="sm" disabled={busy} onClick={()=>void action(async()=>{await apiFetch("/business/studio/rollback",{method:"POST",body:{revision:revision.revision}});setRollback(null);setTested(false);},"Versão restaurada e registrada no histórico.")}>Confirmar restauração</Button></div>:
+              <Button size="sm" variant="outline" disabled={busy} onClick={()=>setRollback(revision.revision)}>Restaurar</Button>}
+          </div>)}
+        </CardContent>
+      </Card>:null}
+      <p className="text-xs text-muted-foreground"><CircleAlert className="mr-1 inline h-3.5 w-3.5"/>O sistema funciona com o motor local e não precisa de serviços pagos. Configurações publicadas aplicam-se apenas a esta instalação.</p>
+    </div>:null}
   </div>;
 }

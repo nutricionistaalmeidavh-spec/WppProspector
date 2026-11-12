@@ -14,6 +14,7 @@ import { SqliteUsageRecorder } from "./conversation-engine/infrastructure/persis
 import { ReplySenderAdapter } from "./conversation-engine/infrastructure/sending/reply-sender.adapter.ts";
 import { ReplyStrategy } from "./conversation-engine/domain/reply-strategy.ts";
 import { BusinessAiStore } from "./business/business-ai-store.ts";
+import { BusinessStudioStore } from "./business/business-studio-store.ts";
 import { MerchantBusinessContext } from "./business/merchant-business-context.ts";
 import { ConfigurableBusinessLlm } from "./business/configurable-business-llm.ts";
 import { loadManagementEnv, resolveAdminConfig } from "./management/infrastructure/config/env.ts";
@@ -143,7 +144,8 @@ const usageRecorder = conversationEnv.LLM_USAGE_TRACKING_ENABLED
   ? new SqliteUsageRecorder(database, logger)
   : new NoopUsageRecorder();
 
-const businessContextProvider = new MerchantBusinessContext(businessAiStore);
+const studioContext = new BusinessStudioStore(database, businessAiStore);
+const businessContextProvider = new MerchantBusinessContext(businessAiStore, () => studioContext.activeCommerceContext());
 
 // API de gestão (/admin): quando ligada, o repositório de conversas é embrulhado
 // por um decorator que mantém a projeção de leitura (`conversation_index`) em
