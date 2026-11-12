@@ -9,7 +9,7 @@ const embed = (text: string): number[] => {
   if(lower.includes("notebook"))return [0,1];
   return [0.1,0.1];
 };
-const mockFetch=vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+const mockFetch=vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
   const body=JSON.parse(String(init?.body)) as {input:string[]};
   return new Response(JSON.stringify({data:body.input.map((text,index)=>({index,embedding:embed(text)}))}),{status:200});
 });
