@@ -23,6 +23,7 @@ import { InboxRoute } from "@/features/inbox/InboxRoute";
 import { CampaignAnalyticsRoute, ConversionsRoute, FunnelRoute } from "@/features/analytics/AnalyticsRoutes";
 import { SettingsRoute } from "@/features/settings/SettingsRoute";
 import { WhatsAppRoute } from "@/features/settings/WhatsAppRoute";
+import { BusinessAiSettingsRoute } from "@/features/settings/BusinessAiSettingsRoute";
 import { AutomationRoute } from "@/features/automations/AutomationRoute";
 
 function ProtectedLayout() {
@@ -74,6 +75,7 @@ export const appRoutes: RouteObject[] = [
       { path: "automations", element: <AutomationRoute /> },
       { path: "settings", element: <SettingsRoute /> },
       { path: "settings/whatsapp", element: <WhatsAppRoute /> },
+      { path: "settings/business-ai", element: <BusinessAiSettingsRoute /> },
 
       { path: "conversations", element: <Navigate to="/conversations/inbox" replace /> },
       { path: "leads", element: <Navigate to="/crm/leads" replace /> },
