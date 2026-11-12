@@ -73,6 +73,23 @@ describe(`Stress API de gestão e limites [${profile}]`, () => {
     }
   });
 
+  it("rejeita payload HTTP acima de 1 MiB sem causar erro interno", async () => {
+    const harness = await buildAdminTestApp();
+    try {
+      const response = await harness.app.inject({
+        method: "POST",
+        url: "/admin/api/session",
+        payload: { secret: "x".repeat(1_100_000) },
+      });
+      expect(response.statusCode).toBe(413);
+      expect((await harness.app.inject({
+        method: "GET", url: "/admin/api/conversations",
+      })).statusCode).toBe(401);
+    } finally {
+      await harness.close();
+    }
+  });
+
   it("suporta leitores concorrentes sem 500, vazamento de sessão ou inconsistência nas estatísticas", async () => {
     const concurrency = size(60, 250, 900);
     const harness = await buildAdminTestApp({
