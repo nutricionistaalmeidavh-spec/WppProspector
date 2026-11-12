@@ -1,4 +1,4 @@
-import type { BusinessContextProvider, BusinessContextInput } from "../../conversation-engine/application/ports/business-context.port.ts";
+import type { BusinessContextProvider, BusinessContextInput } from "../conversation-engine/application/ports/business-context.port.ts";
 import type { BusinessAiStore } from "./business-ai-store.ts";
 
 /**
