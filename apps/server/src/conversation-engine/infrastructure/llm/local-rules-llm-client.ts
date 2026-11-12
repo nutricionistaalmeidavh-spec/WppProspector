@@ -9,7 +9,8 @@ export class LocalRulesLlmClient implements LlmClientPort {
   constructor(private readonly business: () => BusinessProfile | undefined = () => undefined) {}
 
   async generate(request: LlmRequest): Promise<LlmResponse> {
-    const user = request.messages.filter(item => item.role === "user").map(item => item.content).join(" ").trim();
+    // Histórico não deve contaminar a identificação do produto solicitado agora.
+    const user = request.messages.filter(item => item.role === "user").at(-1)?.content.trim() ?? "";
     const normalized = normalize(user);
     const isExtraction = request.responseSchema !== undefined &&
       Object.prototype.hasOwnProperty.call((request.responseSchema.properties as Record<string, unknown> | undefined) ?? {}, "temas");
