@@ -96,6 +96,23 @@ describe("Business Studio P0–P2",()=>{
       expect(store.getActiveAi().apiKey).toBeUndefined();
     }finally{db.close();}
   });
+  it("não altera credencial nem endpoint já ativos enquanto rascunho não for publicado",()=>{
+    const db=openDatabase(":memory:");
+    try{
+      const store=new BusinessAiStore(db,"f".repeat(64));
+      store.saveAi({provider:"openai",model:"gpt-4.1-mini",apiKey:"active-old"});
+      store.stageAi({provider:"openai",model:"gpt-4.1-mini",apiKey:"pending-new"});
+      expect(store.getActiveAi().apiKey).toBe("active-old");
+      expect(store.getPreviewAi().apiKey).toBe("pending-new");
+      store.publishAi();
+      expect(store.getActiveAi().apiKey).toBe("pending-new");
+      store.saveAi({provider:"compatible",model:"live",endpoint:"http://127.0.0.1:8000/v1/chat/completions"});
+      store.stageAi({provider:"compatible",model:"draft",endpoint:"http://127.0.0.1:8001/v1/chat/completions"});
+      expect(store.getActiveAi().endpoint).toBe("http://127.0.0.1:8000/v1/chat/completions");
+      store.publishAi();
+      expect(store.getActiveAi().endpoint).toBe("http://127.0.0.1:8001/v1/chat/completions");
+    }finally{db.close();}
+  });
   it("sincroniza somente quando solicitado e nunca devolve o token Shopify",async()=>{
     const db=openDatabase(":memory:");
     try{
