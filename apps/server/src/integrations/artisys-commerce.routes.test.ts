@@ -54,7 +54,7 @@ describe('ArtiSys Commerce -> CRM canônico',()=>{
     try{
       expect((await app.inject(signed(event(randomUUID(),'crm.sale_revoked')))).statusCode).toBe(200);
       expect((await app.inject(signed(event(randomUUID(),'crm.sale')))).statusCode).toBe(200);
-      expect(listArtisysCommerceSales(db)[0].status).toBe('revoked');
+      expect(listArtisysCommerceSales(db)[0]?.status).toBe('revoked');
     }finally{await close()}
   });
 });
