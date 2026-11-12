@@ -4,7 +4,7 @@ describe("OpenAiChatClient opcional", () => {
   it("envia a chave somente ao endpoint oficial e contabiliza tokens", async () => {
     const fake=vi.fn(async (_url:string, opts:RequestInit)=> {
       const body=JSON.parse(String(opts.body)) as {messages:{role:string;content:string}[]};
-      expect(body.messages[0].content).toContain("Loja Exemplo");
+      expect(body.messages[0]?.content).toContain("Loja Exemplo");
       expect((opts.headers as Record<string,string>).authorization).toBe("Bearer sk-test");
       return new Response(JSON.stringify({model:"gpt-4.1-mini",
         choices:[{message:{content:'{"replyMessages":["Olá"],"endConversation":false}'}}],
