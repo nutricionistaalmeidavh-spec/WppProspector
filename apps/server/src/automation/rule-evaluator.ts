@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optOutRequested } from "../whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
 import type { BotDecisionInput } from "../conversation-engine/domain/bot-decision.ts";
 import type { Stage } from "../crm/crm-store.ts";
 
@@ -68,7 +69,7 @@ export function scopeKey(context: Pick<RuleContext, "businessId"|"channelId"|"ph
 /** Regras comerciais nunca podem sobrepor retirada de consentimento nem pedido de humano. */
 export function mandatoryPolicy(message: string): BotDecisionInput | null {
   const normalized = normalizeRuleText(message);
-  if (/\b(pare|parem|parar|cancele|cancelar|descadastrar|remova|remover|nao quero mais|nao me envie|nao tenho interesse|sair)\b/.test(normalized)) {
+  if (optOutRequested(message)) {
     return decision([], false, true, "opt_out");
   }
   if (/\b(humano|atendente|pessoa real|falar com alguem|falar com uma pessoa)\b/.test(normalized)) {
