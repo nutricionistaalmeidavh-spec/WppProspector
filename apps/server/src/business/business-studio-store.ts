@@ -25,6 +25,8 @@ const commerceSync=z.object({products:z.array(catalogItem.strict()).max(2500),or
 const normalizeRuleText=(value:string)=>value.normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase().trim().replace(/\\s+/g," ");
 const hash=(value:string)=>createHash("sha256").update(value).digest("hex");
 
+export class StudioValidationError extends Error {}
+
 export class BusinessStudioStore {
   constructor(
     private readonly db: DatabaseSync,
@@ -43,6 +45,7 @@ export class BusinessStudioStore {
     const updatedAt = new Date().toISOString();
     this.db.prepare("INSERT INTO business_profile_draft(id,data_json,updated_at) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json,updated_at=excluded.updated_at")
       .run(JSON.stringify(profile), updatedAt);
+    this.db.prepare("DELETE FROM business_studio_validation WHERE scope='profile'").run();
     return { profile, published: false, updatedAt };
   }
   /** Torna o rascunho oficial apenas após confirmação explícita. */
@@ -94,6 +97,7 @@ export class BusinessStudioStore {
     const now=new Date().toISOString();
     this.db.prepare("INSERT INTO business_rule_draft(id,rules_json,updated_at) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET rules_json=excluded.rules_json,updated_at=excluded.updated_at")
       .run(JSON.stringify(normalized),now);
+    this.db.prepare("DELETE FROM business_studio_validation WHERE scope='rules'").run();
     return this.getRulesDraft();
   }
   previewRule(message:string) {
@@ -141,7 +145,7 @@ export class BusinessStudioStore {
     return row?.digest===this.digest(scope);
   }
   assertValidated(scope:"profile"|"engine"|"rules"){
-    if(!this.isValidated(scope))throw new Error("Valide o rascunho no Laboratório antes de publicar.");
+    if(!this.isValidated(scope))throw new StudioValidationError("Valide o rascunho no Laboratório antes de publicar.");
   }
   getValidation(){
     return {profileReady:this.getDraft().published||this.isValidated("profile"),
