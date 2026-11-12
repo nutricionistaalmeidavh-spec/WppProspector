@@ -15,3 +15,6 @@ coverage/
 .temp/
 .vscode/
 .idea/
+
+# Chave local usada somente para cifrar chaves de APIs opcionais
+.ai-credentials-key
