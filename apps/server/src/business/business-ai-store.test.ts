@@ -1,0 +1,68 @@
+import { describe, expect, it } from "vitest";
+import { openDatabase } from "../shared/persistence/sqlite/open-database.ts";
+import { BusinessAiStore } from "./business-ai-store.ts";
+import { LocalRulesLlmClient } from "../conversation-engine/infrastructure/llm/local-rules-llm-client.ts";
+
+const request = (message: string) => ({
+  system: "Atendimento comercial",
+  messages: [{ role: "user" as const, content: message }],
+  model: "local-rules",
+  maxTokens: 1000,
+});
+
+describe("perfil de loja e motor de regras genérico", () => {
+  it("não contém produtos ou preços da ArtiSys em uma instalação nova", async () => {
+    const db = openDatabase(":memory:");
+    try {
+      const store = new BusinessAiStore(db, "a".repeat(64));
+      const profile = store.getBusiness();
+      expect(profile.name).toBe("");
+      expect(JSON.stringify(profile)).not.toMatch(/obra na mão|fluxodre|R\\$ 200|artisys finance/i);
+      const bot = new LocalRulesLlmClient(() => store.getBusiness());
+      const response = JSON.parse((await bot.generate(request("Quanto custa?"))).text);
+      expect(response.replyMessages.join(" ")).not.toMatch(/obra na mão|fluxodre|R\\$ 200|artisys/i);
+      expect(response.handoffToHuman).toBe(true);
+    } finally { db.close(); }
+  });
+
+  it("usa apenas o catálogo e as políticas da loja cadastrada, sem reutilizar informações anteriores", async () => {
+    const db = openDatabase(":memory:");
+    try {
+      const store = new BusinessAiStore(db, "b".repeat(64));
+      store.saveBusiness({
+        name: "Loja Exemplo A", segment: "roupas", description: "Moda infantil",
+        openingHours: "Segunda a sábado, das 9 às 18h", paymentMethods: "Pix ou cartão",
+        deliveryPolicy: "Entregas em até 3 dias", returnPolicy: "Trocas em 7 dias",
+        additionalInstructions: "",
+        products: [{ name: "Camisa Azul", price: "R$ 45,00", description: "Algodão" }],
+        faq: [],
+      });
+      const bot = new LocalRulesLlmClient(() => store.getBusiness());
+      let answer = JSON.parse((await bot.generate(request("Qual o preço da Camisa Azul?"))).text);
+      expect(answer.replyMessages.join(" ")).toContain("R$ 45,00");
+      store.saveBusiness({ ...store.getBusiness(), name: "Loja Exemplo B",
+        products: [{ name: "Tênis Verde", price: "R$ 99,00", description: "" }] });
+      answer = JSON.parse((await bot.generate(request("Qual o preço da Camisa Azul?"))).text);
+      expect(answer.replyMessages.join(" ")).not.toContain("R$ 45,00");
+      answer = JSON.parse((await bot.generate(request("Quanto custa o Tênis Verde?"))).text);
+      expect(answer.replyMessages.join(" ")).toContain("R$ 99,00");
+    } finally { db.close(); }
+  });
+
+  it("cifra chaves da Anthropic/OpenAI e não as devolve na configuração pública", () => {
+    const db = openDatabase(":memory:");
+    try {
+      const store = new BusinessAiStore(db, "c".repeat(64));
+      store.saveAi({ provider: "anthropic", model: "claude-sonnet-4-5", apiKey: "sk-test-not-a-real-key" });
+      const visible = store.getAi();
+      expect(visible.hasApiKey).toBe(true);
+      expect(JSON.stringify(visible)).not.toContain("sk-test");
+      expect(store.getActiveAi().apiKey).toBe("sk-test-not-a-real-key");
+      const raw = JSON.stringify(db.prepare("SELECT * FROM business_ai_settings").get());
+      expect(raw).not.toContain("sk-test");
+      store.saveAi({ provider: "rules", model: "", apiKey: "" });
+      expect(store.getActiveAi().provider).toBe("rules");
+      expect(store.getAi().hasApiKey).toBe(false);
+    } finally { db.close(); }
+  });
+});
