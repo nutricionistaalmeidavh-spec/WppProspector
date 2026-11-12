@@ -1,5 +1,6 @@
 import type { LlmClientPort, LlmRequest, LlmResponse } from "../../application/ports/llm-client.port.ts";
 import type { BusinessProfile } from "../../../business/business-ai-store.ts";
+import { localExtraction } from "../knowledge/signal-extraction.ts";
 
 const normalize = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const fallback = "Vou confirmar essa informação com nossa equipe para não passar dados incorretos.";
@@ -35,7 +36,7 @@ export class LocalRulesLlmClient implements LlmClientPort {
 
     let value: unknown;
     if (isExtraction) {
-      value = { temas: [], dores: [], modulosProvaveis: [] };
+      value = localExtraction([user], {});
     } else {
       const company = this.business();
       const optedOut = /\b(pare|parem|parar|cancele|cancelar|remova|remover|descadastrar|nao quero mais|nao me envie|nao tenho interesse|sair)\b/.test(normalized);
