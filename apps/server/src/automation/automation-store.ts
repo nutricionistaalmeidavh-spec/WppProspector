@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { CRM_STAGES, CrmStore } from "../crm/crm-store.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import type { BotDecisionInput } from "../conversation-engine/domain/bot-decision.ts";
@@ -19,13 +20,19 @@ export const ruleInputSchema = z.object({
   trigger: z.string().trim().max(120),
   eventType: automationEventSchema.default("message.received"),
   conditions: conditionGroupSchema.optional(),
-  action: z.enum(["reply","menu","handoff"]),
-  response: z.string().trim().min(1).max(4096),
+  action: z.enum(["reply","menu","handoff","crm_set_stage"]),
+  targetStage: z.enum(CRM_STAGES).optional(),
+  response: z.string().trim().max(4096),
   enabled: z.boolean().default(true),
   priority: z.number().int().min(-1000).max(1000).default(0),
   options: z.array(menuOptionSchema).max(8).default([]),
 }).superRefine((value,ctx)=>{
   if (value.eventType === "message.received" && !value.trigger) ctx.addIssue({code:"custom",path:["trigger"],message:"Informe o gatilho"});
+  if (value.action!=="crm_set_stage"&&!value.response)ctx.addIssue({code:"custom",path:["response"],message:"Informe a resposta"});
+  if (value.action==="crm_set_stage" &&
+    (value.eventType!=="crm.opportunity_updated"||!value.targetStage||
+      !value.conditions?.conditions.some(item=>item.field==="crm.stage")))
+    ctx.addIssue({code:"custom",path:["targetStage"],message:"Mudança de etapa exige evento CRM, destino e condição de etapa"});
   if (value.eventType !== "message.received" && value.action === "menu") ctx.addIssue({code:"custom",path:["action"],message:"Menus exigem evento de mensagem"});
   if (value.action === "menu" && value.options.length===0) ctx.addIssue({code:"custom",path:["options"],message:"Menu deve ter pelo menos uma opção"});
   const keys = value.options.map(x=>x.key.toLowerCase());
@@ -63,14 +70,14 @@ export class AutomationStore {
     const rule = ruleInputSchema.parse(raw);
     const now = this.clock().toISOString(), id = rule.id ?? randomUUID();
     this.db.prepare(`INSERT INTO automation_rules
-      (id,name,match_type,trigger_text,action,response_text,options_json,enabled,priority,created_at,updated_at,event_type,conditions_json)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+      (id,name,match_type,trigger_text,action,response_text,options_json,enabled,priority,created_at,updated_at,event_type,conditions_json,target_stage)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
       name=excluded.name,match_type=excluded.match_type,trigger_text=excluded.trigger_text,
       action=excluded.action,response_text=excluded.response_text,options_json=excluded.options_json,
       enabled=excluded.enabled,priority=excluded.priority,updated_at=excluded.updated_at,
-      event_type=excluded.event_type,conditions_json=excluded.conditions_json`)
+      event_type=excluded.event_type,conditions_json=excluded.conditions_json,target_stage=excluded.target_stage`)
       .run(id,rule.name,rule.match,rule.trigger,rule.action,rule.response,JSON.stringify(rule.options),
-        Number(rule.enabled),rule.priority,now,now,rule.eventType,JSON.stringify(rule.conditions??null));
+        Number(rule.enabled),rule.priority,now,now,rule.eventType,JSON.stringify(rule.conditions??null),rule.targetStage??"");
     const row=this.db.prepare("SELECT * FROM automation_rules WHERE id=?").get(id) as Record<string,unknown>;
     return this.ruleRow(row);
   }
@@ -101,6 +108,14 @@ export class AutomationStore {
   evaluateEvent(context:RuleContext):RuleEvaluation {
     if(context.eventType==="message.received")throw new Error("Use evaluate() para mensagens reais.");
     const result=evaluateRules(this.listRules(),context,null);
+    if(result.action){
+      // O executor valida a entidade canônica; nenhuma mensagem é enviada ao canal.
+      const crm=new CrmStore(this.db);
+      const opportunity=crm.getOpportunity(result.action.opportunityId);
+      if(!opportunity || opportunity.leadPhone!==context.phone)
+        throw new Error("Oportunidade não corresponde ao contato do evento.");
+      if(opportunity.stage!==result.action.stage)crm.updateOpportunity(opportunity.id,{stage:result.action.stage});
+    }
     this.audit(context,result);
     return result;
   }
@@ -176,6 +191,7 @@ export class AutomationStore {
       action:r.action as Rule["action"],response:String(r.response_text),
       options:JSON.parse(String(r.options_json)) as Rule["options"],enabled:Boolean(r.enabled),
       eventType:automationEventSchema.parse(r.event_type??"message.received"),
+      ...(r.target_stage?{targetStage:z.enum(CRM_STAGES).parse(r.target_stage)}:{}),
       ...(r.conditions_json&&r.conditions_json!=="null"?{conditions:conditionGroupSchema.parse(JSON.parse(String(r.conditions_json)))}:{}),
       priority:Number(r.priority),createdAt:String(r.created_at),updatedAt:String(r.updated_at),
     };
