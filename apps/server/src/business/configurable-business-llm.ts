@@ -14,6 +14,7 @@ export class ConfigurableBusinessLlm implements LlmClientPort {
     const ai = this.store.getActiveAi();
     if (ai.provider === "rules") return this.local.generate(request);
     const provider = ai.provider === "anthropic" ? new AnthropicLlmClient({apiKey: ai.apiKey!})
+      : ai.provider === "compatible" ? new OpenAiChatClient("", fetch, ai.endpoint!)
       : new OpenAiChatClient(ai.apiKey!);
     return provider.generate({ ...request, model: ai.model });
   }
