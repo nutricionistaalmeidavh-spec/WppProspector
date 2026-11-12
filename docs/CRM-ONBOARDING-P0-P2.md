@@ -14,7 +14,13 @@ Migration `0019_crm_onboarding.sql` adiciona tabelas apenas para progresso, hist
 
 A configuração de loja e métricas exigem admin. Operadores podem salvar apenas o próprio tour e progresso da primeira operação. As rotas usam o cookie de sessão já existente e o guard de autenticação. Progresso de setup pertence à instalação; tour pertence ao operador.
 
-O wizard não ativa disparos, não cria bases de demonstração nem cadastra produtos fictícios. Etapas de conexão WhatsApp e IA podem ser adiadas; toda conexão pela Meta e toda API comercial dependem de autorização/configuração explícita. Recomendações de segmentos **não** alteram silenciosamente o funil nem criam regras. A instalação continua funcional no modo local, com custo obrigatório R$ 0.
+O wizard não ativa disparos, não cria bases de demonstração nem cadastra produtos fictícios. Etapas de conexão WhatsApp e IA podem ser adiadas; toda conexão pela Meta e toda API comercial dependem de autorização/configuração explícita. Recomendações de segmentos **não** alteram silenciosamente o funil nem criam regras.
+
+### Perfis rápidos por segmento
+
+Além dos perfis genéricos (Comércio, Serviços, Construção e engenharia, Saúde e bem-estar), o assistente oferece: Clínica de Estética, Salão de Beleza e Barbearia, Clínica Odontológica, Consultório e Clínica de Saúde, Academia e Personal Trainer, Imobiliária, Oficina Mecânica, Restaurante e Delivery, Loja de Roupas, Escola e Cursos, Pet Shop e Clínica Veterinária, e Seguradora e Corretora de Seguros.
+
+A seleção preenche **somente** o campo canônico `segment` e oferece três sugestões de fluxo comercial e três orientações operacionais por ramo. Não sobrescreve nome, serviços, horário, políticas, catálogo ou instruções próprias; também permite segmento personalizado. As sugestões aparecem apenas como referência durante o onboarding: não criam etapas de Kanban, regras ativas, agendamentos, mensagens, integrações nem dados de demonstração. Setores regulados orientam a encaminhar decisões técnicas a profissionais habilitados. O motor de regras local permanece gratuito e independente de serviços pagos. A instalação continua funcional no modo local, com custo obrigatório R$ 0.
 
 ## Estados de recuperação
 

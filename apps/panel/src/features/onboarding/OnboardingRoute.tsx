@@ -26,6 +26,18 @@ const templates = [
   {label:"Prestação de serviços",value:"Serviços"},
   {label:"Construção e engenharia",value:"Construção e engenharia"},
   {label:"Saúde e bem-estar",value:"Saúde e bem-estar"},
+  {label:"Clínica de Estética",value:"Clínica de Estética"},
+  {label:"Salão de Beleza e Barbearia",value:"Salão de Beleza e Barbearia"},
+  {label:"Clínica Odontológica",value:"Clínica Odontológica"},
+  {label:"Consultório e Clínica de Saúde",value:"Consultório e Clínica de Saúde"},
+  {label:"Academia e Personal Trainer",value:"Academia e Personal Trainer"},
+  {label:"Imobiliária",value:"Imobiliária"},
+  {label:"Oficina Mecânica",value:"Oficina Mecânica"},
+  {label:"Restaurante e Delivery",value:"Restaurante e Delivery"},
+  {label:"Loja de Roupas",value:"Loja de Roupas"},
+  {label:"Escola e Cursos",value:"Escola e Cursos"},
+  {label:"Pet Shop e Clínica Veterinária",value:"Pet Shop e Clínica Veterinária"},
+  {label:"Seguradora e Corretora de Seguros",value:"Seguradora e Corretora de Seguros"},
 ];
 const stages = ["Novo", "Contatado", "Respondeu", "Qualificado", "Reunião", "Proposta", "Negociação", "Ganho", "Perdido"];
 type IndustryGuidance = { funnel: string[]; rules: string[] };
@@ -45,6 +57,54 @@ const industryGuidance: Record<string, IndustryGuidance> = {
   "Saúde e bem-estar": {
     funnel: ["Identificar o serviço desejado", "Orientar sobre disponibilidade de consulta", "Confirmar atendimento sem expor dados pessoais"],
     rules: ["Não solicitar detalhes médicos sensíveis pelo fluxo comercial.", "Não inventar orientações clínicas, preços ou horários.", "Direcionar dúvidas técnicas para profissional responsável."],
+  },
+  "Clínica de Estética": {
+    funnel: ["Identificar o procedimento estético de interesse", "Verificar disponibilidade e necessidade de avaliação profissional", "Confirmar agendamento após aceite do cliente"],
+    rules: ["Não prometer resultados, diagnósticos ou ausência de riscos.", "Informar preços, contraindicações e horários somente quando validados pela clínica.", "Encaminhar dúvidas clínicas e situações de saúde ao profissional responsável."],
+  },
+  "Salão de Beleza e Barbearia": {
+    funnel: ["Identificar o serviço e o profissional desejado", "Consultar horários disponíveis da equipe", "Confirmar agendamento e acompanhar retorno"],
+    rules: ["Apresentar apenas serviços e valores cadastrados.", "Não confirmar horário sem disponibilidade verificada.", "Pedir autorização antes de enviar lembretes ou campanhas."],
+  },
+  "Clínica Odontológica": {
+    funnel: ["Identificar o tipo de atendimento procurado", "Orientar para triagem ou avaliação com dentista", "Confirmar consulta e acompanhar retorno"],
+    rules: ["Não oferecer diagnóstico, prescrição ou plano de tratamento pelo atendimento comercial.", "Não pedir exames ou detalhes sensíveis no fluxo de vendas.", "Encaminhar urgências e dúvidas clínicas à equipe habilitada."],
+  },
+  "Consultório e Clínica de Saúde": {
+    funnel: ["Identificar a especialidade ou consulta procurada", "Consultar agenda real e condições de atendimento", "Confirmar consulta e orientar próximos passos administrativos"],
+    rules: ["Não solicitar histórico clínico sensível pela triagem comercial.", "Nunca emitir diagnóstico, prescrição ou aconselhamento médico.", "Horários, cobertura e valores devem vir de fontes cadastradas."],
+  },
+  "Academia e Personal Trainer": {
+    funnel: ["Identificar objetivo geral e modalidade de interesse", "Apresentar planos e horários disponíveis", "Agendar visita ou aula experimental com confirmação"],
+    rules: ["Não prometer resultados físicos ou recomendar condutas clínicas.", "Usar somente preços, modalidades e vagas cadastrados.", "Encaminhar questões de saúde e limitações a profissional habilitado."],
+  },
+  "Imobiliária": {
+    funnel: ["Identificar compra, locação ou venda e região de interesse", "Qualificar faixa de investimento e características desejadas", "Agendar visita e acompanhar proposta"],
+    rules: ["Somente informar imóveis, disponibilidade e preços do cadastro real.", "Não prometer crédito aprovado ou condições jurídicas sem validação.", "Confirmar autorização antes de agendar visitas ou compartilhar contatos."],
+  },
+  "Oficina Mecânica": {
+    funnel: ["Identificar veículo e problema relatado pelo cliente", "Combinar avaliação ou diagnóstico técnico", "Enviar orçamento e confirmar autorização do reparo"],
+    rules: ["Não fechar diagnóstico ou valor de reparo sem avaliação.", "Não iniciar serviço sem aprovação explícita do cliente.", "Informar prazos, peças e garantias apenas quando confirmados."],
+  },
+  "Restaurante e Delivery": {
+    funnel: ["Identificar pedido, reserva ou dúvida sobre cardápio", "Conferir itens, preços, área de entrega e disponibilidade reais", "Confirmar pedido ou reserva e acompanhar atendimento"],
+    rules: ["Não inventar pratos, preços, ingredientes ou horários.", "Confirmar endereço e pedido antes de finalizar, sem envio automático.", "Sinalizar dúvidas sobre alergênicos para conferência humana."],
+  },
+  "Loja de Roupas": {
+    funnel: ["Identificar peça, tamanho e preferência do cliente", "Consultar estoque, variações e preços reais", "Orientar compra e acompanhar entrega ou troca"],
+    rules: ["Não garantir disponibilidade sem consulta ao estoque cadastrado.", "Usar somente políticas de troca e entrega da loja.", "Evitar afirmar tamanho ideal sem informações fornecidas pelo cliente."],
+  },
+  "Escola e Cursos": {
+    funnel: ["Identificar curso, modalidade e interesse do aluno", "Apresentar grade, valores e turmas confirmados", "Orientar matrícula e acompanhar pendências"],
+    rules: ["Não prometer certificação, vaga ou benefício não informado.", "Informar somente calendário, preços e requisitos cadastrados.", "Quando houver menores de idade, direcionar decisões ao responsável."],
+  },
+  "Pet Shop e Clínica Veterinária": {
+    funnel: ["Identificar banho e tosa, produto ou consulta veterinária", "Consultar serviços, profissionais e horários disponíveis", "Confirmar agendamento ou orçamento autorizado"],
+    rules: ["Não fornecer diagnóstico, prescrição ou dose de medicamento animal.", "Encaminhar sintomas urgentes à equipe veterinária.", "Informar preços e disponibilidade somente com dados reais."],
+  },
+  "Seguradora e Corretora de Seguros": {
+    funnel: ["Identificar tipo de seguro e necessidade de cobertura", "Coletar apenas dados necessários para cotação consentida", "Apresentar proposta validada e acompanhar contratação"],
+    rules: ["Não prometer cobertura, carência, prêmio ou aprovação sem cotação válida.", "Explicar que condições dependem de seguradora e apólice.", "Não solicitar documentos sensíveis antes de esclarecer a finalidade."],
   },
   "default": {
     funnel: ["Identificar a necessidade", "Qualificar a oportunidade", "Apresentar a proposta e acompanhar o retorno"],
@@ -145,7 +205,7 @@ export function OnboardingRoute() {
             value={templates.some(t=>t.value===profile.segment)?profile.segment:""} onChange={e=>{if(e.target.value)setProfile(p=>({...p,segment:e.target.value}));}}>
             {templates.map(item=><option key={item.label} value={item.value}>{item.label}</option>)}
           </select>
-          <p className="text-xs text-muted-foreground">Sugere apenas a categoria, sem preencher informações comerciais fictícias.</p>
+          <p className="text-xs text-muted-foreground">Escolha um perfil rápido para visualizar sugestões de funil e regras. Seus dados comerciais não serão preenchidos nem as regras ativadas.</p>
         </div>
         {input("description","Produtos e serviços","O que sua empresa oferece?")}
         <div className="grid gap-4 sm:grid-cols-2">{input("openingHours","Horário de atendimento (opcional)","Seg–sex, 8h às 18h")}{input("paymentMethods","Formas de pagamento (opcional)","Pix, cartão…")}</div>
