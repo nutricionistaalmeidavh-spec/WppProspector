@@ -40,4 +40,18 @@ describe("FollowupScheduler", () => {
     expect(store.getFollowup(second.id)?.state).toBe("cancelled");
     db.close();
   });
+  it("não envia agendamento de outro canal nem o cancela por resposta de canal diferente",()=>{
+    const db=openDatabase(":memory:");
+    try{
+      const consent=new SqliteConsentStore(db);
+      consent.grant(phone,"formulario",now);
+      const clock=()=>new Date(now.getTime()+120_000);
+      const a=new AutomationStore(db,clock,()=>"baileys:canal-a");
+      const b=new AutomationStore(db,clock,()=>"baileys:canal-b");
+      a.scheduleFollowup({phone,message:"Somente canal A",dueAt:new Date(now.getTime()+60_000).toISOString()},consent);
+      expect(b.due()).toHaveLength(0);
+      expect(b.cancelForReply(phone)).toBe(0);
+      expect(a.due()).toHaveLength(1);
+    }finally{db.close();}
+  });
 });
