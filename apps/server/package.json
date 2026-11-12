@@ -20,7 +20,8 @@
     "conversations:clear": "node --experimental-transform-types --env-file-if-exists=.env scripts/clear-conversations.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:stress": "vitest run --config vitest.stress.config.ts"
   },
   "repository": {
     "type": "git",
