@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { LogOut, Menu, X } from "lucide-react";
+import { CircleHelp, LogOut, Menu, X } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useSession } from "@/auth/session";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,9 @@ import { ContractMismatchBanner } from "@/components/ContractMismatchBanner";
 import { cn } from "@/lib/utils";
 import { getNavigationGroups, PRODUCT_MARK } from "@/components/navigation";
 import { useCrmRuntime } from "@/features/crm/runtime";
+import { TourGuide } from "@/features/onboarding/TourGuide";
+import { useOnboardingState } from "@/features/onboarding/api";
+import { Link } from "react-router-dom";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { logout, role } = useSession();
@@ -17,6 +20,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const crmRuntime = useCrmRuntime();
+  const onboarding = useOnboardingState();
+  const [showContextHelp,setShowContextHelp] = useState(false);
+  const help:Record<string,string> = {
+    "/overview":"A visão geral mostra o estado atual do atendimento. Para começar, crie um lead e vincule uma oportunidade ao funil.",
+    "/crm/leads":"Use a base de leads para cadastrar contatos sem duplicar números existentes. Importações não enviam mensagens por si só.",
+    "/crm/pipeline":"Cada cartão representa uma oportunidade. Mover a etapa atualiza o histórico canônico do negócio.",
+    "/conversations/inbox":"As conversas dependem de um WhatsApp conectado. É possível usar o CRM sem sincronização de conversas.",
+    "/automations":"Automações locais não requerem API paga. Revise condições e consequências antes de ativar qualquer envio.",
+    "/settings":"As configurações de empresa, WhatsApp e motor de regras podem ser alteradas após o primeiro acesso.",
+  };
   const ProductMark = PRODUCT_MARK;
   const groups = getNavigationGroups(crmRuntime.modules,role??"agent");
 
@@ -107,6 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <NavLink
                     key={item.to}
                     to={item.to}
+                    data-tour={item.to}
                     onClick={() => setMobileOpen(false)}
                     className={({ isActive }) =>
                       cn(
@@ -128,6 +142,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       </nav>
 
       <div className="border-t p-3">
+        <Link to={role==="admin"?"/onboarding":"/overview?tour=1"} onClick={()=>setMobileOpen(false)}
+          className="mb-2 block rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
+          <CircleHelp className="mr-2 inline h-4 w-4"/> Primeiros passos
+        </Link>
         <Button
           variant="ghost"
           size="sm"
@@ -190,8 +208,30 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
 
         <main className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+          <div className="mb-4 flex justify-end">
+            <Button variant="ghost" size="sm" onClick={()=>setShowContextHelp(value=>!value)} aria-expanded={showContextHelp}>
+              <CircleHelp className="h-4 w-4"/> Ajuda desta página
+            </Button>
+          </div>
+          {showContextHelp?<aside className="mb-4 rounded-lg border bg-card p-3 text-sm" role="note">
+            {help[location.pathname]??"Use Primeiros passos para configurar o CRM e conhecer as funcionalidades."}
+            <Link to="/onboarding" className="ml-2 font-semibold text-primary hover:underline">Primeiros passos</Link>
+          </aside>:null}
+          {location.pathname==="/overview" && onboarding.data && !onboarding.data.ready && onboarding.data.role==="admin"?
+            <div className="mb-5 rounded-xl border bg-card p-4 text-sm">
+              <p className="font-semibold">Seu CRM ainda tem etapas de configuração pendentes.</p>
+              <p className="mt-1 text-muted-foreground">Retome de onde parou. O CRM funciona sem WhatsApp ou IA paga.</p>
+              <Link to="/onboarding" className="mt-2 inline-block font-semibold text-primary hover:underline">Retomar configuração guiada</Link>
+            </div>:null}
+          {location.pathname==="/overview" && onboarding.data?.ready && !onboarding.data.firstOperation?
+            <div className="mb-5 rounded-xl border bg-card p-4 text-sm">
+              <p className="font-semibold">Conheça o fluxo comercial na prática</p>
+              <p className="mt-1 text-muted-foreground">Cadastre um lead e uma oportunidade reais, sem enviar mensagens.</p>
+              <Link to="/onboarding/first-operation" className="mt-2 inline-block font-semibold text-primary hover:underline">Criar primeira oportunidade</Link>
+            </div>:null}
           {children}
         </main>
+        <TourGuide />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import cookie from "@fastify/cookie";
 import { BusinessAiStore } from "../../../business/business-ai-store.ts";
+import { registerOnboardingRoutes } from "../../../onboarding/onboarding.routes.ts";
 import { registerBusinessSettingsRoutes } from "../../../business/business-settings.routes.ts";
 import type { FastifyPluginAsync } from "fastify";
 import type { DatabaseSync } from "node:sqlite";
@@ -36,6 +37,8 @@ import { registerCrmRoutes } from "../../../crm/crm-routes.ts";
 import { TeamStore } from "../../../team/team-store.ts";
 import { registerTeamRoutes } from "../../../team/team.routes.ts";
 import { registerWhatsAppConnectionsRoutes } from "../../../whatsapp-connectivity/infrastructure/http/routes/whatsapp-connections.routes.ts";
+import { registerWhatsAppContactsRoutes } from "../../../whatsapp-connectivity/infrastructure/http/routes/whatsapp-contacts.routes.ts";
+import { WhatsappContactsStore } from "../../../whatsapp-connectivity/infrastructure/persistence/whatsapp-contacts-store.ts";
 import type { WhatsAppConnectionManager } from "../../../whatsapp-connectivity/infrastructure/gateways/whatsapp-connection-manager.ts";
 import type { MetaEmbeddedSignup } from "../../../whatsapp-connectivity/infrastructure/gateways/meta-embedded-signup.ts";
 
@@ -151,6 +154,10 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
       businessId:"default",channelId:deps.whatsappConnections?.activeChannelKey()??"default",
       crmStage:opportunity.stage,crmOpportunityId:opportunity.id,
     }),
+  });
+  await app.register(registerOnboardingRoutes, { db: deps.db, sessionSecret: deps.config.sessionSecret, clock });
+  await app.register(registerWhatsAppContactsRoutes, {
+    store: new WhatsappContactsStore(deps.db, clock), leads: deps.leads,
   });
   await app.register(registerTeamRoutes,{store:team});
   if (deps.consent) await app.register(registerConsentRoutes, { consent: deps.consent });

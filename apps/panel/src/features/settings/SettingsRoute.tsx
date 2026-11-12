@@ -1,4 +1,5 @@
 import { Bot, CheckCircle2, CircleDashed, MessageSquare, UploadCloud } from "lucide-react";
+import { useSession } from "@/auth/session";
 import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusPill } from "@/components/StatusPill";
@@ -7,6 +8,7 @@ import { useActionAvailability } from "@/features/actions/useActionAvailability"
 import { useCrmRuntime } from "@/features/crm/runtime";
 
 export function SettingsRoute() {
+  const {role}=useSession();
   const capabilities = useActionAvailability();
   const crm = useCrmRuntime();
   const crmActive = crm.source === "http" && Object.values(crm.modules).every(Boolean);
@@ -21,8 +23,11 @@ export function SettingsRoute() {
     <div className="space-y-6">
       <PageHeader eyebrow="Sistema" title="Configurações" description="Estado das integrações que a interface consegue consumir neste deploy." />
       <div className="flex flex-wrap gap-2">
-        <Link to="/settings/whatsapp" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Gerenciar conexões WhatsApp</Link>
-        <Link to="/settings/business-ai" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Motor de Regras / Inteligência Artificial</Link>
+        {role==="admin"?<Link to="/settings/whatsapp" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Gerenciar conexões WhatsApp</Link>:null}
+        {role==="admin"?<Link to="/settings/business-ai" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Motor de Regras / Inteligência Artificial</Link>:null}
+        {role==="admin"?<Link to="/onboarding" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Retomar configuração guiada</Link>:null}
+        <Link to="/overview?tour=1" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Refazer tour</Link>
+        {role==="admin"?<Link to="/settings/onboarding" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Indicadores do primeiro acesso</Link>:null}
       </div>
       <Card className="max-w-3xl shadow-sm">
         <CardHeader><CardTitle className="text-base">Capabilities</CardTitle></CardHeader>

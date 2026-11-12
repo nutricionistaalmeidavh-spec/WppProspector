@@ -121,6 +121,46 @@ export const registerCrmRoutes:FastifyPluginAsync<{
   });
 
   app.get("/api/crm/opportunities",async()=>({items:store.listOpportunities()}));
+  const conversationParams=z.object({phone});
+  const linkParams=z.object({phone,id:z.string().uuid()});
+  const contactFields=z.object({
+    displayName:z.string().trim().max(160).optional(),
+    company:z.string().trim().max(160).optional(),
+    segment:z.string().trim().max(100).optional(),
+    city:z.string().trim().max(100).optional(),
+    notes:z.string().trim().max(3000).optional(),
+  });
+  app.get<{Params:{phone:string}}>("/api/crm/conversations/:phone/context",async(req,reply)=>{
+    const parsed=conversationParams.safeParse(req.params);
+    if(!parsed.success)return reply.code(422).send({error:"Telefone inválido"});
+    const context=store.getConversationContext(parsed.data.phone);
+    return context.exists?reply.send(context):reply.code(404).send({error:"Conversa não encontrada"});
+  });
+  app.patch<{Params:{phone:string}}>("/api/crm/conversations/:phone/contact",async(req,reply)=>{
+    const params=conversationParams.safeParse(req.params),body=contactFields.safeParse(req.body);
+    if(!params.success||!body.success)return reply.code(422).send({error:"Contato inválido"});
+    try{return reply.send(store.saveConversationContact(params.data.phone,body.data));}
+    catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
+  });
+  app.post<{Params:{phone:string;id:string}}>("/api/crm/conversations/:phone/opportunities/:id",async(req,reply)=>{
+    const parsed=linkParams.safeParse(req.params);
+    if(!parsed.success)return reply.code(422).send({error:"Vínculo inválido"});
+    try{store.linkConversation(parsed.data.phone,parsed.data.id);return reply.send({ok:true});}
+    catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
+  });
+  app.delete<{Params:{phone:string;id:string}}>("/api/crm/conversations/:phone/opportunities/:id",async(req,reply)=>{
+    const parsed=linkParams.safeParse(req.params);
+    if(!parsed.success)return reply.code(422).send({error:"Vínculo inválido"});
+    try{return store.unlinkConversation(parsed.data.phone,parsed.data.id)?reply.code(204).send():reply.code(404).send({error:"Vínculo não encontrado"});}
+    catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
+  });
+  app.get<{Params:{id:string}}>("/api/crm/opportunities/:id/conversations",async(req,reply)=>{
+    const parsed=idParams.safeParse(req.params);
+    if(!parsed.success)return reply.code(422).send({error:"ID inválido"});
+    try{return reply.send({items:store.listOpportunityConversations(parsed.data.id)});}
+    catch(e){return reply.code(404).send({error:e instanceof Error?e.message:"Oportunidade não encontrada"});}
+  });
+
   app.get<{Params:{id:string}}>("/api/crm/opportunities/:id",async(req,reply)=>{
     const params=idParams.safeParse(req.params);
     if(!params.success)return reply.code(422).send({error:"ID inválido"});
@@ -147,7 +187,6 @@ export const registerCrmRoutes:FastifyPluginAsync<{
       if(value&&before&&before.stage!==value.stage){
         try{onOpportunityUpdated?.(value);}
         catch(error){
-          // Evento posterior à gravação: não ocultar o sucesso do update canônico.
           console.error("Falha ao executar regra de evento CRM",error instanceof Error?error.message:"erro");
         }
       }

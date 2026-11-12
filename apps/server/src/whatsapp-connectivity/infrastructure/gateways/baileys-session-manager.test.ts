@@ -31,4 +31,25 @@ describe("BaileysSessionManager", () => {
     expect(() => new BaileysSessionManager("./auth", "../segredo")).toThrow(/inválido/);
     expect(() => new BaileysSessionManager("./auth", "a,b,c,d,e,f")).toThrow(/inválido/);
   });
+  it("sincroniza a agenda somente da sessão selecionada, sem criar leads nem enviar mensagens", async () => {
+    const callbacks = new Map<string, Parameters<ManagedSession["start"]>[0]>();
+    const received = vi.fn();
+    const manager = new BaileysSessionManager("./auth", "principal,secundaria", 5, id => ({
+      ...fake(),
+      start: vi.fn(async (inbound: Parameters<ManagedSession["start"]>[0]) => { callbacks.set(id, inbound); }),
+    }));
+    await manager.start({execute:()=>{}, contacts:received});
+    const batch=[{phone:"+5516999999999",displayName:"Contato QA"}];
+    callbacks.get("secundaria")?.contacts?.(batch);
+    expect(received).not.toHaveBeenCalled();
+    callbacks.get("principal")?.contacts?.(batch);
+    expect(received).toHaveBeenCalledOnce();
+    manager.selectSession("secundaria");
+    callbacks.get("principal")?.contacts?.(batch);
+    expect(received).toHaveBeenCalledTimes(1);
+    callbacks.get("secundaria")?.contacts?.(batch);
+    expect(received).toHaveBeenCalledTimes(2);
+    await manager.stop();
+  });
+
 });
