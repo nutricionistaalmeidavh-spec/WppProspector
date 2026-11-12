@@ -4,6 +4,7 @@ copyright: Copyright (c) 2026 ArtiSys
 asar: true
 files:
   - main.cjs
+  - boot-support.cjs
   - preload.cjs
   - license.cjs
   - public-key.pem
