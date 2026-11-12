@@ -306,7 +306,10 @@ if (isMainModule) {
           logger.error("Falha ao confirmar evento Baileys", { error: String(error) }));
       },
       contacts(contacts) {
-        try { contactDirectory.upsertMany(contacts, "baileys"); }
+        try {
+          for (let index=0;index<contacts.length;index+=2000)
+            contactDirectory.upsertMany(contacts.slice(index,index+2000), "baileys");
+        }
         catch (error) { logger.warn("Falha na sincronização local de contatos", {
           error: error instanceof Error ? error.message : String(error),
         }); }
