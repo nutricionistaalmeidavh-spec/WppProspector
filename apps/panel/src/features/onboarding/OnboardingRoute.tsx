@@ -259,6 +259,24 @@ export function OnboardingRoute() {
           <p className="text-xs text-muted-foreground">Escolha um perfil rápido para visualizar sugestões de funil e regras. Seus dados comerciais não serão preenchidos nem as regras ativadas.</p>
         </div>
         {input("description","Produtos e serviços","O que sua empresa oferece?")}
+        <div className="space-y-3 rounded-lg border p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div><p className="text-sm font-semibold">Serviços/produtos e preços reais (opcional)</p>
+              <p className="text-xs text-muted-foreground">Cadastre informações confirmadas. Preços em branco não serão inventados.</p></div>
+            <Button type="button" size="sm" variant="outline" disabled={busy||profile.products.length>=10}
+              onClick={()=>setProfile(p=>({...p,products:[...p.products,{name:"",price:"",description:""}]}))}>Adicionar serviço</Button>
+          </div>
+          {profile.products.map((item,index)=><div className="grid gap-2 rounded-md border p-3 sm:grid-cols-[1.2fr_0.7fr_1.2fr_auto]" key={index}>
+            <Input aria-label={"Serviço "+(index+1)} value={item.name} placeholder="Nome do serviço/produto"
+              onChange={e=>setProfile(p=>({...p,products:p.products.map((v,i)=>i===index?{...v,name:e.target.value}:v)}))}/>
+            <Input aria-label={"Preço "+(index+1)} value={item.price} placeholder="Preço confirmado"
+              onChange={e=>setProfile(p=>({...p,products:p.products.map((v,i)=>i===index?{...v,price:e.target.value}:v)}))}/>
+            <Input aria-label={"Detalhes "+(index+1)} value={item.description} placeholder="Detalhes verificados"
+              onChange={e=>setProfile(p=>({...p,products:p.products.map((v,i)=>i===index?{...v,description:e.target.value}:v)}))}/>
+            <Button type="button" variant="ghost" size="sm" aria-label={"Remover serviço "+(index+1)}
+              onClick={()=>setProfile(p=>({...p,products:p.products.filter((_,i)=>i!==index)}))}>Remover</Button>
+          </div>)}
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">{input("openingHours","Horário de atendimento (opcional)","Seg–sex, 8h às 18h")}{input("paymentMethods","Formas de pagamento (opcional)","Pix, cartão…")}</div>
         {input("deliveryPolicy","Entregas e atendimento (opcional)","Onde e como você atende?")}
         {input("returnPolicy","Trocas e garantias (opcional)","Política real da empresa")}
