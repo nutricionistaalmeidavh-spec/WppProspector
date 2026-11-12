@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { ArrowRight, BookOpen, BrainCircuit, CheckCircle2, CircleAlert, FlaskConical, History, Package, Plus, Save, Send, ShieldCheck, Store, Trash2, Workflow } from "lucide-react";
 import { apiFetch } from "@/api/client";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AutomationRoute } from "@/features/automations/AutomationRoute";
 
 type Product = {name:string;price:string;description:string};
 type Faq = {question:string;answer:string};
@@ -16,12 +17,19 @@ type Business = {name:string;segment:string;description:string;openingHours:stri
 type Engine = "rules"|"anthropic"|"openai"|"compatible";
 type EngineDraft = {provider:Engine;model:string;endpoint:string;published:boolean;hasApiKey:boolean};
 type Ai = {provider:Engine;model:string;providers:{anthropic:boolean;openai:boolean};canStoreKeys:boolean;endpoint?:string};
-type Revision = {revision:number;name:string;publishedAt:string};
-type Studio = {draft:{profile:Business;published:boolean;updatedAt:string|null};pendingAi:EngineDraft;activeAi:Ai;history:Revision[];commerce:CommerceStatus};
+type Revision = {revision:number;kind:"profile"|"engine"|"rules";name:string;publishedAt:string};
+type Studio = {
+  draft:{profile:Business;published:boolean;updatedAt:string|null};
+  rulesDraft:{items:unknown[];published:boolean;updatedAt:string|null};
+  validation:{profileReady:boolean;engineReady:boolean;rulesReady:boolean};
+  pendingAi:EngineDraft;activeAi:Ai;history:Revision[];commerce:CommerceStatus;
+  integration:{configured:boolean;createdAt:string|null;lastSyncAt:string|null};
+};
 type CommerceStatus = {enabled:boolean;count:number;orders:number;lastSync:string|null;shopify:{configured:boolean;domain:string;updatedAt:string|null}};
 type CatalogProduct = {id:string;source:string;name:string;sku:string;price:string;stock:number|null;syncedAt:string};
 type CommerceData = {items:CatalogProduct[];orders:Array<{id:string;number:string;financialStatus:string;fulfillmentStatus:string;total:string;createdAt:string}>;status:CommerceStatus};
 type Sample = {reply:string;provider:string;configuredProvider?:Engine;rule?:string;handoff?:boolean;charged:boolean;sent:boolean;usage?:{input:number;output:number}};
+type Diagnostic = {ok:boolean;provider:string;model:string;diagnostic:string;checkedAt:string;durationMs?:number;charged:boolean};
 type Stage = "overview"|"company"|"knowledge"|"rules"|"engine"|"lab"|"commerce"|"history";
 const stages: Array<{id:Stage;label:string}> = [
   {id:"overview",label:"Visão geral"},{id:"company",label:"Minha empresa"},{id:"knowledge",label:"Conhecimento"},
@@ -47,7 +55,9 @@ function column(row:Record<string,unknown>, aliases:string[]):string {
 }
 export function BusinessAiSettingsRoute(){
   const {role}=useSession();
-  const [stage,setStage]=useState<Stage>("overview");
+  const [params]=useSearchParams();
+  const [stage,setStage]=useState<Stage>(()=>stages.find(x=>x.id===params.get("step"))?.id??"overview");
+  useEffect(()=>{const requested=stages.find(x=>x.id===params.get("step"));if(requested)setStage(requested.id);},[params]);
   const [studio,setStudio]=useState<Studio|null>(null);
   const [commerce,setCommerce]=useState<CommerceData|null>(null);
   const [profile,setProfile]=useState<Business>(empty);
@@ -60,12 +70,15 @@ export function BusinessAiSettingsRoute(){
   const [dirty,setDirty]=useState(false);
   const [engineDirty,setEngineDirty]=useState(false);
   const [tested,setTested]=useState(false);
+  const [diagnosticConsent,setDiagnosticConsent]=useState(false);
+  const [diagnostic,setDiagnostic]=useState<Diagnostic|null>(null);
+  const [integrationToken,setIntegrationToken]=useState("");
   const [preview,setPreview]=useState<Sample|null>(null);
   const [question,setQuestion]=useState("Qual é o horário de atendimento?");
   const [externalConsent,setExternalConsent]=useState(false);
   const [message,setMessage]=useState("");
   const [error,setError]=useState("");
-  const [rollback,setRollback]=useState<number|null>(null);
+  const [rollback,setRollback]=useState<string|null>(null);
   const [importPreview,setImportPreview]=useState<{kind:"catalog"|"faq";items:Array<Record<string,unknown>>}|null>(null);
 
   async function refresh(){
@@ -153,9 +166,9 @@ export function BusinessAiSettingsRoute(){
   const progress = [
     {label:"Perfil da empresa",ready:Boolean(profile.name.trim())},
     {label:"Conhecimento",ready:profile.products.length>0||profile.faq.length>0||Boolean(commerce?.status.count)},
-    {label:"Regras",ready:true},
-    {label:"Motor",ready:Boolean(studio?.activeAi)},
-    {label:"Validação",ready:tested},
+    {label:"Regras",ready:Boolean(studio?.validation.rulesReady)},
+    {label:"Motor",ready:Boolean(studio?.validation.engineReady)},
+    {label:"Validação",ready:tested||Boolean(studio?.validation.profileReady)},
   ];
   return <div className="space-y-5">
     <PageHeader eyebrow="Configurações" title="Central do atendente virtual"
@@ -229,7 +242,7 @@ export function BusinessAiSettingsRoute(){
             </div>:null}
             <div className="flex flex-wrap items-center gap-2 border-t pt-4">
               <Button disabled={busy||!dirty} onClick={()=>void action(()=>apiFetch("/business/studio/draft",{method:"PUT",body:profile}),"Rascunho salvo. Os clientes ainda recebem a configuração publicada.")}><Save className="h-4 w-4"/>Salvar rascunho</Button>
-              <Button variant="outline" disabled={busy||dirty||studio.draft.published||!tested} onClick={()=>void action(()=>apiFetch("/business/studio/publish",{method:"POST"}),"Configuração publicada para os próximos atendimentos.")}><Send className="h-4 w-4"/>Publicar informações</Button>
+              <Button variant="outline" disabled={busy||dirty||studio.draft.published||!studio.validation.profileReady} onClick={()=>void action(()=>apiFetch("/business/studio/publish",{method:"POST"}),"Configuração publicada para os próximos atendimentos.")}><Send className="h-4 w-4"/>Publicar informações</Button>
               <span className="text-xs text-muted-foreground">{dirty?"Salve antes de publicar":studio.draft.published?"Sem rascunho pendente":tested?"Simulação concluída":"Teste o rascunho no laboratório antes de publicar"}</span>
               {!studio.draft.published&&!tested?<Button size="sm" variant="ghost" onClick={()=>setStage("lab")}>Testar agora <ArrowRight className="h-3 w-3"/></Button>:null}
             </div>
@@ -237,13 +250,21 @@ export function BusinessAiSettingsRoute(){
         </Card>
       </div>:null}
 
-      {stage==="rules"?<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-5 w-5"/>Regras de atendimento</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">As automações determinísticas têm prioridade sobre o motor de IA. Configure gatilhos, respostas, menus e encaminhamento humano em uma única área, sem duplicar regras no perfil.</p>
-          <div className="rounded-lg border bg-muted/30 p-4 text-sm"><p className="font-semibold">Ordem de decisão</p><p className="mt-1">1. Regras automáticas → 2. Motor selecionado → 3. Encaminhamento humano quando não souber.</p></div>
-          <Link to="/automations" className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted">Gerenciar automações <ArrowRight className="h-4 w-4"/></Link>
-        </CardContent>
-      </Card>:null}
+      {stage==="rules"?<div className="space-y-4">
+        <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-5 w-5"/>Regras e automações em um só lugar</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">Edite as regras abaixo, salve no rascunho, teste um disparador no Laboratório e publique. Nenhuma regra nova entra em produção ao clicar em salvar.</p>
+            <div className="rounded-lg border bg-muted/30 p-3 text-xs">Ordem de execução: regra ativa → motor de atendimento → encaminhamento humano. Follow-ups mantêm a exigência de consentimento.</div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" disabled={busy} onClick={()=>void action(async()=>{},"Versão das regras atualizada.")}>Atualizar situação</Button>
+              <Button variant="outline" onClick={()=>setStage("lab")}>Testar regras <FlaskConical className="h-4 w-4"/></Button>
+              <Button disabled={busy||studio.rulesDraft.published||!studio.validation.rulesReady} onClick={()=>void action(()=>apiFetch("/business/studio/rules-publish",{method:"POST"}),"Regras publicadas com sucesso.")}><ShieldCheck className="h-4 w-4"/>Publicar regras testadas</Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Estado: {studio.rulesDraft.published?"regras publicadas":studio.validation.rulesReady?"rascunho validado":"rascunho pendente de teste"}.</p>
+          </CardContent>
+        </Card>
+        <AutomationRoute embedded/>
+      </div>:null}
 
       {stage==="engine"?<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><BrainCircuit className="h-5 w-5"/>Inteligência do atendimento</CardTitle></CardHeader>
         <CardContent className="space-y-4">
@@ -255,7 +276,7 @@ export function BusinessAiSettingsRoute(){
               ["anthropic","Anthropic — API opcional","Modelo comercial e cobrança do provedor."],
               ["compatible","Servidor próprio compatível — R$ 0 de API","Endpoint Chat Completions local ou HTTPS autohospedado."],
             ] as Array<[Engine,string,string]>).map(([id,label,help])=><label key={id} className={"flex cursor-pointer items-start gap-3 rounded-lg border p-3 "+(engine.provider===id?"border-primary bg-accent/40":"")}>
-              <input type="radio" className="mt-1" name="engine" checked={engine.provider===id} onChange={()=>{setEngine({...engine,provider:id,model:suggested[id],endpoint:id==="compatible"?engine.endpoint:""});setEngineDirty(true);setTested(false);setExternalConsent(false);}}/>
+              <input type="radio" className="mt-1" name="engine" checked={engine.provider===id} onChange={()=>{setEngine({...engine,provider:id,model:suggested[id],endpoint:id==="compatible"?engine.endpoint:""});setEngineDirty(true);setTested(false);setExternalConsent(false);setDiagnostic(null);setDiagnosticConsent(false);}}/>
               <span><strong className="block text-sm">{label}</strong><span className="text-xs text-muted-foreground">{help}</span></span>
             </label>)}
           </fieldset>
@@ -264,8 +285,18 @@ export function BusinessAiSettingsRoute(){
             {engine.provider==="compatible"?<div className="space-y-1"><Label htmlFor="engine-endpoint">Endpoint do seu servidor</Label><Input id="engine-endpoint" type="url" value={engine.endpoint} placeholder="http://127.0.0.1:8000/v1/chat/completions" onChange={e=>{setEngine({...engine,endpoint:e.target.value});setEngineDirty(true);setTested(false);}}/><p className="text-xs text-muted-foreground">Sem modelo embutido; você disponibiliza a inferência no servidor próprio.</p></div>:
               <div className="space-y-1"><Label htmlFor="engine-api-key">Chave privada de API</Label><Input id="engine-api-key" type="password" autoComplete="off" value={apiKey} placeholder={engine.hasApiKey?"Chave já armazenada — mantenha em branco para conservar":"Insira uma chave nova"} onChange={e=>{setApiKey(e.target.value);setEngineDirty(true);setTested(false);}}/><p className="text-xs text-muted-foreground">Armazenada cifrada no servidor, nunca exibida novamente. Testes externos podem consumir créditos.</p></div>}
           </div>:null}
+          <div className="space-y-3 rounded-lg border bg-muted/25 p-4">
+            <p className="text-sm font-semibold">Diagnóstico de conexão e modelo</p>
+            <p className="text-xs text-muted-foreground">Verifica conectividade, autenticação e disponibilidade do modelo. A consulta de diagnóstico não envia dados de clientes.</p>
+            {engine.provider!=="rules"?<label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={diagnosticConsent} onChange={e=>setDiagnosticConsent(e.target.checked)}/><span>Autorizo uma chamada técnica ao provedor selecionado {engine.provider==="compatible"?"no meu servidor":"com possível cobrança de API"}.</span></label>:null}
+            <Button variant="outline" size="sm" disabled={busy||engineDirty||(engine.provider!=="rules"&&!diagnosticConsent)} onClick={()=>void action(async()=>{
+              const result=await apiFetch<Diagnostic>("/business/studio/ai-diagnostics",{method:"POST",body:{allowExternal:diagnosticConsent}});
+              setDiagnostic(result);
+            },"Diagnóstico de conexão realizado.")}>Testar conexão e modelo</Button>
+            {diagnostic?<p role="status" className="text-xs">{diagnostic.ok?"Conectado: "+diagnostic.model+" — "+diagnostic.diagnostic:"Não foi possível validar o provedor."}</p>:null}
+          </div>
           <div className="flex flex-wrap gap-2 border-t pt-4"><Button disabled={busy||!engineDirty} onClick={()=>void action(async()=>{await apiFetch("/business/studio/ai-draft",{method:"PUT",body:{provider:engine.provider,model:engine.model,endpoint:engine.endpoint,apiKey}});setApiKey("");setTested(false);},"Motor salvo como rascunho; atendimento real não foi alterado.")}><Save className="h-4 w-4"/>Salvar motor em rascunho</Button>
-            <Button variant="outline" disabled={busy||engineDirty||studio.pendingAi.published||!tested||preview?.provider!==studio.pendingAi.provider} onClick={()=>void action(()=>apiFetch("/business/studio/ai-publish",{method:"POST"}),"Motor publicado e ativado nos próximos atendimentos.")}><ShieldCheck className="h-4 w-4"/>Ativar motor testado</Button>
+            <Button variant="outline" disabled={busy||engineDirty||studio.pendingAi.published||!studio.validation.engineReady} onClick={()=>void action(()=>apiFetch("/business/studio/ai-publish",{method:"POST"}),"Motor publicado e ativado nos próximos atendimentos.")}><ShieldCheck className="h-4 w-4"/>Ativar motor testado</Button>
             <Button variant="ghost" onClick={()=>setStage("lab")}>Testar <FlaskConical className="h-4 w-4"/></Button>
           </div>
           <p className="text-xs text-muted-foreground">Ativo: {studio.activeAi.provider}. Pendente: {studio.pendingAi.published?"nenhum":studio.pendingAi.provider}.</p>
@@ -307,6 +338,36 @@ export function BusinessAiSettingsRoute(){
             <p className="text-xs text-muted-foreground">Última atualização: {commerce?.status.lastSync?new Date(commerce.status.lastSync).toLocaleString("pt-BR"):"não realizada"}. Estoque pode ficar desatualizado; respostas não devem prometer disponibilidade.</p>
           </CardContent>
         </Card>
+        <Card><CardHeader><CardTitle className="text-base">Integração genérica de estoque e pedidos</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">Conecte PDVs, ERPs e sistemas próprios enviando um snapshot de produtos e atualizações de pedidos para esta instalação. Não exige nenhuma plataforma comercial.</p>
+            <div className="rounded-lg border p-3 text-xs"><p className="font-semibold">Endpoint HTTP de sincronização</p>
+              <code className="mt-1 block break-all">POST /admin/integrations/commerce/v1/sync</code>
+              <p className="mt-2 text-muted-foreground">Authorization: Bearer SEU_TOKEN (gerado abaixo)</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button disabled={busy} size="sm" onClick={()=>void action(async()=>{
+                const result=await apiFetch<{token:string}>("/business/studio/integration-token",{method:"POST"});
+                setIntegrationToken(result.token);
+              },"Token gerado. Copie-o agora; não será exibido novamente.")}>{studio.integration.configured?"Rotacionar token":"Criar token local de integração"}</Button>
+              <Button variant="outline" size="sm" disabled={busy||!studio.integration.configured} onClick={()=>void action(async()=>{
+                await apiFetch("/business/studio/integration-token",{method:"DELETE"});
+                setIntegrationToken("");
+              },"Acesso de integração revogado.")}>Revogar acesso</Button>
+              <span className="text-xs text-muted-foreground">{studio.integration.configured?"Integração disponível":"Nenhum token ativo"}</span>
+            </div>
+            {integrationToken?<div className="space-y-1 rounded-lg border p-3">
+              <Label htmlFor="integration-token">Token — exibido somente agora</Label>
+              <Input id="integration-token" readOnly value={integrationToken} aria-label="Token de integração gerado"/>
+              <p className="text-xs text-muted-foreground">Guarde-o em um gerenciador de segredos. A rotação invalida o token anterior.</p>
+            </div>:null}
+            <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Exemplo do formato JSON enviado pelo ERP/PDV</summary>
+              <pre className="mt-3 overflow-x-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify({products:[{id:"SKU001",name:"Produto",sku:"SKU001",price:"50.00",stock:10}],orders:[{id:"pedido001",number:"#001",financialStatus:"paid",fulfillmentStatus:"pending",total:"50 BRL",createdAt:"2026-11-12T12:00:00Z"}]},null,2)}</pre>
+            </details>
+            <p className="text-xs text-muted-foreground">Último recebimento: {studio.integration.lastSyncAt?new Date(studio.integration.lastSyncAt).toLocaleString("pt-BR"):"nenhum"}. O atendimento só acessa o catálogo com a fonte ativada; pedidos não entram no prompt.</p>
+          </CardContent>
+        </Card>
+        <details className="rounded-xl border bg-card p-3"><summary className="cursor-pointer text-sm font-medium">Conectores específicos opcionais (Shopify)</summary>
         <Card><CardHeader><CardTitle className="text-base">Shopify (somente leitura)</CardTitle></CardHeader>
           <CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Opcional. Use o domínio myshopify.com e um token Admin API com permissões read_products, read_inventory e read_orders. A sincronização é manual e consulta até 50 produtos e 50 pedidos por execução.</p>
             <div className="grid gap-3 md:grid-cols-2">
@@ -319,19 +380,23 @@ export function BusinessAiSettingsRoute(){
             </div>
           </CardContent>
         </Card>
+        </details>
         <Card><CardHeader><CardTitle className="text-base">Amostra dos dados sincronizados</CardTitle></CardHeader><CardContent className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2"><p className="text-sm font-semibold">Produtos</p>{commerce?.items.length?commerce.items.slice(0,10).map(item=><div key={item.id} className="flex justify-between gap-2 border-b py-2 text-xs"><span className="min-w-0 truncate">{item.name} {item.sku?"· "+item.sku:""}</span><span className="whitespace-nowrap text-muted-foreground">{item.stock??"?"} un.</span></div>):<p className="text-xs text-muted-foreground">Nenhum produto importado.</p>}</div>
           <div className="space-y-2"><p className="text-sm font-semibold">Pedidos (sem dados pessoais)</p>{commerce?.orders.length?commerce.orders.slice(0,10).map(item=><div key={item.id} className="flex justify-between gap-2 border-b py-2 text-xs"><span>{item.number}</span><span className="text-muted-foreground">{item.fulfillmentStatus}</span></div>):<p className="text-xs text-muted-foreground">Nenhum pedido sincronizado.</p>}</div>
         </CardContent></Card>
       </div>:null}
 
-      {stage==="history"?<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><History className="h-5 w-5"/>Histórico de publicação</CardTitle></CardHeader>
-        <CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Restaura as informações publicadas da loja. Credenciais de API e inventário sincronizado não são alterados.</p>
+      {stage==="history"?<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><History className="h-5 w-5"/>Histórico e reversão</CardTitle></CardHeader>
+        <CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Restaure a versão anterior do perfil, das regras ou da seleção do motor. Segredos e inventário não são copiados para versões anteriores. Uma API comercial restaurada precisa ter sua chave ainda cadastrada.</p>
           {studio.history.length===0?<p className="rounded-lg border p-4 text-sm text-muted-foreground">Ainda não há publicações nesta central.</p>:null}
-          {studio.history.map(revision=><div key={revision.revision} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
-            <div><p className="text-sm font-semibold">Versão {revision.revision} · {revision.name}</p><p className="text-xs text-muted-foreground">{new Date(revision.publishedAt).toLocaleString("pt-BR")}</p></div>
-            {rollback===revision.revision?<div className="flex gap-2"><Button size="sm" variant="outline" onClick={()=>setRollback(null)}>Cancelar</Button><Button size="sm" disabled={busy} onClick={()=>void action(async()=>{await apiFetch("/business/studio/rollback",{method:"POST",body:{revision:revision.revision}});setRollback(null);setTested(false);},"Versão restaurada e registrada no histórico.")}>Confirmar restauração</Button></div>:
-              <Button size="sm" variant="outline" disabled={busy} onClick={()=>setRollback(revision.revision)}>Restaurar</Button>}
+          {studio.history.map(revision=><div key={revision.kind+":"+revision.revision} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+            <div><p className="text-sm font-semibold">{revision.kind==="profile"?"Perfil":revision.kind==="engine"?"Inteligência":"Regras"} · Versão {revision.revision} · {revision.name}</p><p className="text-xs text-muted-foreground">{new Date(revision.publishedAt).toLocaleString("pt-BR")}</p></div>
+            {rollback===revision.kind+":"+revision.revision?<div className="flex gap-2"><Button size="sm" variant="outline" onClick={()=>setRollback(null)}>Cancelar</Button><Button size="sm" disabled={busy} onClick={()=>void action(async()=>{
+                await apiFetch("/business/studio/rollback",{method:"POST",body:{revision:revision.revision,kind:revision.kind}});
+                setRollback(null);setTested(false);
+              },"Versão restaurada e registrada no histórico.")}>Confirmar restauração</Button></div>:
+              <Button size="sm" variant="outline" disabled={busy} onClick={()=>setRollback(revision.kind+":"+revision.revision)}>Restaurar</Button>}
           </div>)}
         </CardContent>
       </Card>:null}

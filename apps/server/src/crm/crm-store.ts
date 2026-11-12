@@ -31,6 +31,69 @@ const euro=(n:unknown)=>Number(n??0)/100;
 export class CrmStore {
   constructor(private readonly db:DatabaseSync, private readonly clock:()=>Date=()=>new Date()) {}
   private now(){return this.clock().toISOString();}
+  /** Telefone é a identidade canônica da conversa; não há segunda cópia do chat no CRM. */
+  conversationExists(phone: string): boolean {
+    return Boolean(this.db.prepare("SELECT 1 FROM conversation_index WHERE lead_phone=?").get(phone));
+  }
+  getConversationContext(phone: string) {
+    const lead = this.db.prepare(`SELECT phone,display_name AS displayName,source,notes,company,segment,city,company_id AS companyId
+      FROM leads WHERE phone=?`).get(phone) as (Record<string, unknown> | undefined);
+    const joined = `SELECT o.*,c.name AS company_name,l.display_name AS lead_name,
+      cp.name AS campaign_name,u.username AS owner_username
+      FROM crm_opportunities o JOIN crm_companies c ON c.id=o.company_id
+      JOIN leads l ON l.phone=o.lead_phone
+      LEFT JOIN crm_campaigns cp ON cp.id=o.campaign_id
+      LEFT JOIN crm_team_users u ON u.id=o.owner_user_id`;
+    const opportunities = (this.db.prepare(joined + ` WHERE o.lead_phone=? OR EXISTS (
+      SELECT 1 FROM crm_opportunity_conversations rel
+      WHERE rel.opportunity_id=o.id AND rel.lead_phone=?
+    ) ORDER BY o.updated_at DESC LIMIT 500`).all(phone,phone) as Row[]).map(row=>this.opportunityRow(row));
+    const matchingCompany = lead?.companyId ? String(lead.companyId) : "";
+    // Sugestões somente por companyId canônico; confirmação humana obrigatória.
+    const suggestions = matchingCompany ? (this.db.prepare(joined + ` WHERE o.company_id=? AND o.lead_phone<>?
+      AND NOT EXISTS (SELECT 1 FROM crm_opportunity_conversations rel WHERE rel.opportunity_id=o.id AND rel.lead_phone=?)
+      ORDER BY o.updated_at DESC LIMIT 10`).all(matchingCompany,phone,phone) as Row[]).map(row=>this.opportunityRow(row)) : [];
+    return { phone, exists: this.conversationExists(phone), lead: lead??null, opportunities, suggestions };
+  }
+  saveConversationContact(phone: string, input: {displayName?:string;company?:string;segment?:string;city?:string;notes?:string}) {
+    if (!this.conversationExists(phone)) throw new Error("Conversa não encontrada.");
+    const fields = Object.entries({display_name:input.displayName,company:input.company,segment:input.segment,city:input.city,notes:input.notes})
+      .filter((entry):entry is [string,string]=>typeof entry[1]==="string");
+    if (!this.exists("leads","phone",phone)) {
+      const at=this.now();
+      this.db.prepare("INSERT INTO leads(phone,source,prospecting_state,created_at,updated_at) VALUES(?,'whatsapp_inbound','pending',?,?)")
+        .run(phone,at,at);
+    }
+    if (fields.length>0) {
+      const sql="UPDATE leads SET "+fields.map(([key])=>key+"=?").join(",")+",updated_at=? WHERE phone=?";
+      this.db.prepare(sql).run(...fields.map(([,value])=>value.trim()),this.now(),phone);
+    }
+    return this.getConversationContext(phone).lead;
+  }
+  linkConversation(phone:string, opportunityId:string): boolean {
+    if (!this.conversationExists(phone)) throw new Error("Conversa não encontrada.");
+    if (!this.exists("leads","phone",phone)) throw new Error("Cadastre o contato antes de vincular.");
+    const opportunity=this.getOpportunity(opportunityId);
+    if (!opportunity) throw new Error("Oportunidade não encontrada.");
+    if (opportunity.leadPhone===phone) return true; // vínculo principal, sempre canônico
+    this.db.prepare(`INSERT OR IGNORE INTO crm_opportunity_conversations(opportunity_id,lead_phone,source,linked_at)
+      VALUES(?,?,'manual',?)`).run(opportunityId,phone,this.now());
+    return true;
+  }
+  unlinkConversation(phone:string,opportunityId:string): boolean {
+    if (this.getOpportunity(opportunityId)?.leadPhone===phone)
+      throw new Error("O contato principal da oportunidade não pode ser desvinculado; edite a oportunidade.");
+    return Number(this.db.prepare("DELETE FROM crm_opportunity_conversations WHERE opportunity_id=? AND lead_phone=?")
+      .run(opportunityId,phone).changes)>0;
+  }
+  listOpportunityConversations(opportunityId:string): string[] {
+    const opportunity=this.getOpportunity(opportunityId);
+    if (!opportunity) throw new Error("Oportunidade não encontrada.");
+    const additional=(this.db.prepare("SELECT lead_phone AS phone FROM crm_opportunity_conversations WHERE opportunity_id=? ORDER BY linked_at,lead_phone")
+      .all(opportunityId) as Array<{phone:string}>).map(r=>r.phone);
+    return [...new Set([opportunity.leadPhone,...additional])];
+  }
+
   private exists(table:"crm_companies"|"crm_campaigns"|"leads",column:string,id:string){
     return Boolean(this.db.prepare("SELECT 1 FROM "+table+" WHERE "+column+" = ?").get(id));
   }

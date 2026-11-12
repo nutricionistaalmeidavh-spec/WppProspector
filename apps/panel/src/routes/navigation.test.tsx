@@ -31,6 +31,7 @@ describe("navegação CRM", () => {
       "Conversas",
       "Oportunidades",
       "Leads",
+      "Contatos WhatsApp",
     ]);
   });
 

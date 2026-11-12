@@ -20,6 +20,7 @@ import { CommercialRoute } from "@/features/crm/CommercialRoute";
 import { TeamRoute } from "@/features/crm/TeamRoute";
 import { CampaignDetailRoute, CampaignsRoute, ImportsRoute } from "@/features/campaigns/CampaignRoutes";
 import { InboxRoute } from "@/features/inbox/InboxRoute";
+import { ContactsRoute } from "@/features/contacts/ContactsRoute";
 import { CampaignAnalyticsRoute, ConversionsRoute, FunnelRoute } from "@/features/analytics/AnalyticsRoutes";
 import { SettingsRoute } from "@/features/settings/SettingsRoute";
 import { WhatsAppRoute } from "@/features/settings/WhatsAppRoute";
@@ -68,6 +69,7 @@ export const appRoutes: RouteObject[] = [
       { path: "crm/opportunities", element: <OpportunitiesRoute /> },
       { path: "crm/opportunities/:id", element: <OpportunityDetailRoute /> },
       { path: "crm/leads", element: <LeadsRoute /> },
+      { path: "crm/contacts", element: <ContactsRoute /> },
       { path: "crm/companies", element: <CompaniesRoute /> },
       { path: "crm/commercial", element: <CommercialRoute /> },
       { path: "settings/team", element: <TeamRoute /> },

@@ -66,6 +66,9 @@ export class BaileysSessionManager implements WhatsAppGatewayPort {
     await session.start({ execute: message => {
       // Evita que mensagens de um número secundário sejam respondidas pelo principal.
       if (id === this.selectedId) this.inbound?.execute(message);
+    }, contacts: contacts => {
+      // Apenas o canal selecionado alimenta a agenda do CRM.
+      if (id === this.selectedId) this.inbound?.contacts?.(contacts);
     } });
     this.sessions.set(id, session);
   }

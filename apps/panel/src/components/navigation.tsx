@@ -48,6 +48,7 @@ export function getNavigationGroups(crm: CrmModules, role:"admin"|"manager"|"age
         { to: "/conversations/inbox", label: "Conversas", icon: Inbox },
         enabled(crm.opportunities, { to: "/crm/opportunities", label: "Oportunidades", icon: Target }),
         { to: "/crm/leads", label: "Leads", icon: UserRoundSearch },
+        { to: "/crm/contacts", label: "Contatos WhatsApp", icon: UsersRound },
         enabled(crm.companies, { to: "/crm/companies", label: "Empresas", icon: Building2 }),
         enabled(crm.opportunities && crm.companies, { to: "/crm/commercial", label: "Comercial", icon: ClipboardList }),
         enabled(role==="admin" && crm.opportunities && crm.companies, { to: "/settings/team", label: "Equipe", icon: UsersRound }),
