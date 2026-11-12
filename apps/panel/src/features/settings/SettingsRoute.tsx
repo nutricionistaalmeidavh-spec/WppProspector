@@ -25,7 +25,7 @@ export function SettingsRoute() {
       <div className="flex flex-wrap gap-2">
         {role==="admin"?<Link to="/settings/whatsapp" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Gerenciar conexões WhatsApp</Link>:null}
         {role==="admin"?<Link to="/settings/business-ai" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Motor de Regras / Inteligência Artificial</Link>:null}
-        <Link to="/onboarding" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Retomar configuração guiada</Link>
+        {role==="admin"?<Link to="/onboarding" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Retomar configuração guiada</Link>:null}
         <Link to="/overview?tour=1" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Refazer tour</Link>
         {role==="admin"?<Link to="/settings/onboarding" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Indicadores do primeiro acesso</Link>:null}
       </div>

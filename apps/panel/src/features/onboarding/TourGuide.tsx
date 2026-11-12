@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, X } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -21,6 +21,7 @@ export function TourGuide() {
   const client=useQueryClient();
   const requested=new URLSearchParams(location.search).get("tour")==="1";
   const stored=query.data?.tour;
+  const dialogRef=useRef<HTMLElement>(null);
   const [opened,setOpened]=useState(false);
   const [index,setIndex]=useState(0);
   const [busy,setBusy]=useState(false);
@@ -29,6 +30,17 @@ export function TourGuide() {
     if(requested){setOpened(true);setIndex(0);}
     else if(stored?.status==="in_progress"){setOpened(true);setIndex(stored.index);}
   },[requested,stored?.status,stored?.index]);
+  useEffect(()=>{
+    if(!opened)return;
+    const previousFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    const previousOverflow=document.body.style.overflow;
+    document.body.style.overflow="hidden";
+    dialogRef.current?.focus();
+    return ()=>{
+      document.body.style.overflow=previousOverflow;
+      if(previousFocus?.isConnected)previousFocus.focus();
+    };
+  },[opened]);
   useEffect(()=>{
     if(!opened)return;
     const selector='[data-tour="'+tour[index]!.target+'"]';
@@ -50,7 +62,14 @@ export function TourGuide() {
     finally{setBusy(false);}
   }
   return <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 p-3 sm:items-center" role="presentation">
-    <section role="dialog" aria-modal="true" aria-labelledby="tour-title" className="w-full max-w-lg rounded-2xl border bg-card p-5 shadow-2xl" onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();void advance(index,"skipped");}}}>
+    <section role="dialog" aria-modal="true" aria-labelledby="tour-title" ref={dialogRef} tabIndex={-1} className="w-full max-w-lg rounded-2xl border bg-card p-5 shadow-2xl" onKeyDown={event=>{
+      if(event.key==="Escape"){event.preventDefault();void advance(index,"skipped");return;}
+      if(event.key!=="Tab"||!dialogRef.current)return;
+      const available=[...dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), a[href]')];
+      if(!available.length)return;
+      if(event.shiftKey && document.activeElement===available[0]){event.preventDefault();available[available.length-1]?.focus();}
+      else if(!event.shiftKey && document.activeElement===available[available.length-1]){event.preventDefault();available[0]?.focus();}
+    }}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Apresentação · {index+1} de {tour.length}</p>
         <Button aria-label="Pular apresentação" size="icon" variant="ghost" disabled={busy} onClick={()=>void advance(index,"skipped")}><X className="h-4 w-4"/></Button>

@@ -142,7 +142,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </nav>
 
       <div className="border-t p-3">
-        <Link to="/onboarding" onClick={()=>setMobileOpen(false)}
+        <Link to={role==="admin"?"/onboarding":"/overview?tour=1"} onClick={()=>setMobileOpen(false)}
           className="mb-2 block rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
           <CircleHelp className="mr-2 inline h-4 w-4"/> Primeiros passos
         </Link>
