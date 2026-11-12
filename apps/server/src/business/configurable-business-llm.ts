@@ -7,8 +7,9 @@ import type { BusinessAiStore } from "./business-ai-store.ts";
 /** Seleciona provedor por turno; alterar configuração não requer reiniciar o CRM. */
 export class ConfigurableBusinessLlm implements LlmClientPort {
   private readonly local: LocalRulesLlmClient;
-  constructor(private readonly store: BusinessAiStore, catalog:()=>readonly LocalCatalogItem[]=()=>[]) {
-    this.local = new LocalRulesLlmClient(() => store.getBusiness(),catalog);
+  constructor(private readonly store: BusinessAiStore, catalog:()=>readonly LocalCatalogItem[]=()=>[],
+    search:(question:string)=>readonly LocalCatalogItem[]=()=>[]) {
+    this.local = new LocalRulesLlmClient(() => store.getBusiness(),catalog,search);
   }
   async generate(request: LlmRequest): Promise<LlmResponse> {
     const ai = this.store.getActiveAi();
