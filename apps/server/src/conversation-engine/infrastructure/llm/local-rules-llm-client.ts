@@ -8,7 +8,8 @@ const fallback = "Vou confirmar essa informação com nossa equipe para não pas
 export type LocalCatalogItem = {name:string;sku:string;price:string;stock:number|null;syncedAt:string};
 export class LocalRulesLlmClient implements LlmClientPort {
   constructor(private readonly business: () => BusinessProfile | undefined = () => undefined,
-    private readonly catalog: () => readonly LocalCatalogItem[] = () => []) {}
+    private readonly catalog: () => readonly LocalCatalogItem[] = () => [],
+    private readonly search: (question:string) => readonly LocalCatalogItem[] = () => []) {}
 
   async generate(request: LlmRequest): Promise<LlmResponse> {
     // Histórico não deve contaminar a identificação do produto solicitado agora.
@@ -31,7 +32,10 @@ export class LocalRulesLlmClient implements LlmClientPort {
         const words = normalize(candidate).split(/[^a-z0-9]+/).filter(Boolean);
         return words.length > 0 && words.every(word => terms.has(word));
       };
-      const commerceProduct=this.catalog().find(p=>matches(p.name)||(p.sku&&terms.has(normalize(p.sku))));
+      const indexed=this.search(user);
+      // Nunca escolher uma variante arbitrária quando várias correspondem.
+      const commerceProduct=this.catalog().find(p=>matches(p.name)||(p.sku&&terms.has(normalize(p.sku)))) ??
+        (indexed.length===1?indexed[0]:undefined);
       const product = commerceProduct ?? company?.products.find(p => matches(p.name));
       const asksStock=/\b(estoque|disponivel|disponibilidade|tem|quantidade)\b/.test(normalized);
       const knownFaq = company?.faq.find(x => matches(x.question));
