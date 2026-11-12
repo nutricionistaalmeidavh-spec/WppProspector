@@ -1,4 +1,6 @@
 import cookie from "@fastify/cookie";
+import { BusinessAiStore } from "../../../business/business-ai-store.ts";
+import { registerBusinessSettingsRoutes } from "../../../business/business-settings.routes.ts";
 import type { FastifyPluginAsync } from "fastify";
 import type { DatabaseSync } from "node:sqlite";
 import type { ConversationRepositoryPort } from "../../../conversation-engine/application/ports/conversation-repository.port.ts";
@@ -59,6 +61,7 @@ export interface AdminRoutesDeps {
   whatsappConnections?: WhatsAppConnectionManager | undefined;
   embeddedMetaSignup?: MetaEmbeddedSignup | undefined;
   automation?: AutomationStore | undefined;
+  businessAiStore?: BusinessAiStore | undefined;
   followupsEnabled?: boolean | (() => boolean) | undefined;
   clock?: () => Date;
 }
@@ -140,6 +143,7 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
     crm: { opportunities: true, companies: true, campaigns: true },
   });
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
+  await app.register(registerBusinessSettingsRoutes, { store: deps.businessAiStore ?? new BusinessAiStore(deps.db), sessionSecret: deps.config.sessionSecret });
   await app.register(registerCrmRoutes, { store: new CrmStore(deps.db),prospectLead,prospectingEnabled:prospectingAllowed });
   await app.register(registerTeamRoutes,{store:team});
   if (deps.consent) await app.register(registerConsentRoutes, { consent: deps.consent });
