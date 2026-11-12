@@ -96,7 +96,7 @@ test("desktop: configuração P0–P2, tour e primeira oportunidade em banco can
   expect((await stateResponse.json()).firstOperation.leadPhone).toBe(contact);
 
   await page.goto("/admin/crm/pipeline");
-  await expect(page.getByText(opportunity)).toBeVisible();
+  await expect(page.getByText(opportunity, { exact: true }).first()).toBeVisible();
   await capture(page, info, "12-desktop-kanban");
   await verifyLayout(page);
   await page.goto("/admin/crm/leads");
@@ -141,7 +141,7 @@ test("mobile e tablet: navegação, Kanban e layout sem overflow global", async 
     await capture(page, info, "18-mobile-menu");
     await menu.getByRole("link", { name: "Pipeline" }).click();
     await expect(menu).toHaveCount(0);
-    await expect(page.getByText(opportunity)).toBeVisible();
+    await expect(page.getByText(opportunity, { exact: true }).first()).toBeVisible();
     await capture(page, info, "19-mobile-kanban");
     await verifyLayout(page);
 
@@ -167,7 +167,7 @@ test("mobile e tablet: navegação, Kanban e layout sem overflow global", async 
     const page = await tabletContext.newPage();
     await login(page);
     await page.goto("/admin/crm/pipeline");
-    await expect(page.getByText(opportunity)).toBeVisible();
+    await expect(page.getByText(opportunity, { exact: true }).first()).toBeVisible();
     await capture(page, info, "22-tablet-kanban");
     await verifyLayout(page);
   } finally {
