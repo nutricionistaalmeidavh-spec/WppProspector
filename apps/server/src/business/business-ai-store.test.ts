@@ -89,4 +89,45 @@ describe("perfil de loja e motor de regras genérico", () => {
       expect(store.getAi().hasApiKey).toBe(false);
     } finally { db.close(); }
   });
+
+  it("isola configurações entre instalações e reflete alterações publicadas sem reiniciar o motor",async()=>{
+    const dbA=openDatabase(":memory:");
+    const dbB=openDatabase(":memory:");
+    try{
+      const storeA=new BusinessAiStore(dbA);
+      const storeB=new BusinessAiStore(dbB);
+      storeA.saveBusiness({...storeA.getBusiness(),name:"Loja Alpha",
+        products:[{name:"Camisa Azul",description:"",price:"R$ 40"}]});
+      storeB.saveBusiness({...storeB.getBusiness(),name:"Loja Beta",
+        products:[{name:"Tênis Verde",description:"",price:"R$ 90"}]});
+      const botA=new LocalRulesLlmClient(()=>storeA.getBusiness());
+      const botB=new LocalRulesLlmClient(()=>storeB.getBusiness());
+      const ask=async(bot:LocalRulesLlmClient,q:string)=>
+        JSON.parse((await bot.generate(request(q))).text).replyMessages.join(" ") as string;
+      expect(await ask(botA,"Preço da Camisa Azul")).toContain("R$ 40");
+      expect(await ask(botB,"Preço da Camisa Azul")).not.toContain("R$ 40");
+      expect(await ask(botB,"Preço do Tênis Verde")).toContain("R$ 90");
+      storeA.saveBusiness({...storeA.getBusiness(),products:[{name:"Camisa Azul",description:"",price:"R$ 55"}]});
+      expect(await ask(botA,"Preço da Camisa Azul")).toContain("R$ 55");
+      expect(await ask(botB,"Preço da Camisa Azul")).not.toContain("R$ 55");
+      expect(storeA.getBusiness().semanticSearch.enabled).toBe(false);
+      expect(storeB.getBusiness().semanticSearch.enabled).toBe(false);
+    }finally{dbA.close();dbB.close();}
+  });
+
+  it("permite embeddings somente com opt-in explícito e URL validada",()=>{
+    const db=openDatabase(":memory:");
+    try{
+      const store=new BusinessAiStore(db);
+      expect(store.getBusiness().semanticSearch.enabled).toBe(false);
+      expect(()=>store.saveBusiness({...store.getBusiness(),semanticSearch:{
+        enabled:true,endpoint:"http://example.com/v1/embeddings",model:"modelo",
+      }})).toThrow();
+      store.saveBusiness({...store.getBusiness(),semanticSearch:{
+        enabled:true,endpoint:"http://127.0.0.1:8080/v1/embeddings",model:"modelo-local",
+      }});
+      expect(store.getBusiness().semanticSearch).toMatchObject({enabled:true,model:"modelo-local"});
+    }finally{db.close();}
+  });
+
 });
