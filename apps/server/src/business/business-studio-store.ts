@@ -53,8 +53,7 @@ export class BusinessStudioStore {
       .map(row=>({revision:row.revision,publishedAt:row.published_at,name:businessSchema.parse(JSON.parse(row.data_json)).name}));
   }
   rollback(revision: number) {
-    const target = this.db.prepare("SELECT data_json FROM business_profile_revisions WHERE revision=?").get(revision)
-      as {data_json:string}|undefined;
+    const target = this.db.prepare("SELECT data_json FROM business_profile_revisions WHERE revision=?").get(revision) as {data_json:string}|undefined;
     if (!target) throw new Error("Revisão não encontrada.");
     const restore = businessSchema.parse(JSON.parse(target.data_json));
     const now = new Date().toISOString();
