@@ -3,7 +3,7 @@ import { LlmClientError } from "../conversation-engine/application/errors.ts";
 
 /** API oficial de chat da OpenAI, somente por escolha explícita com chave própria. */
 export class OpenAiChatClient implements LlmClientPort {
-  constructor(private readonly apiKey: string, private readonly requestFetch: typeof fetch = fetch) {}
+  constructor(private readonly apiKey: string, private readonly requestFetch: typeof fetch = fetch, private readonly endpoint = "https://api.openai.com/v1/chat/completions") {}
   async generate(request: LlmRequest): Promise<LlmResponse> {
     const system = typeof request.system === "string" ? request.system : request.system.map(b => b.text).join("\n\n");
     const body = {
@@ -17,8 +17,8 @@ export class OpenAiChatClient implements LlmClientPort {
     };
     let res: Response;
     try {
-      res = await this.requestFetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST", headers: { authorization: "Bearer " + this.apiKey, "content-type": "application/json" },
+      res = await this.requestFetch(this.endpoint, {
+        method: "POST", redirect: "error", headers: { ...(this.apiKey ? { authorization: "Bearer " + this.apiKey } : {}), "content-type": "application/json" },
         body: JSON.stringify(body), signal: AbortSignal.timeout(30_000),
       });
     } catch {
