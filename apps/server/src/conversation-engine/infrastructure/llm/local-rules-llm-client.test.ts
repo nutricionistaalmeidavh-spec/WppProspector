@@ -4,6 +4,18 @@ import { LocalRulesLlmClient } from "./local-rules-llm-client.ts";
 const client = new LocalRulesLlmClient();
 
 describe("LocalRulesLlmClient (R$ 0)", () => {
+  it("extrai temas locais sem dependência de provedor externo", async()=>{
+    const result=await client.generate({
+      system:"",messages:[{role:"user",content:"Preciso de controle de estoque e entregas"}],
+      maxTokens:300,model:"local-rules",
+      responseSchema:{properties:{temas:{type:"array"},dores:{type:"array"},modulosProvaveis:{type:"array"}}},
+    });
+    const signals=JSON.parse(result.text);
+    expect(signals.temas).toContain("estoque");
+    expect(signals.temas).toContain("entregas");
+    expect(result.usage.inputTokens).toBe(0);
+  });
+
   it("não depende de chave e retorna decisão estruturada sem custo externo", async () => {
     const result = await client.generate({
       system: "Teste", messages: [{ role: "user", content: "Olá, quero saber mais." }],
