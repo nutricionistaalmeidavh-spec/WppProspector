@@ -25,6 +25,10 @@ describe("Motor de decisões P0-P2", () => {
     expect(result.decision?.endConversation).toBe(true);
     expect(result.decision?.replyMessages).toEqual([]);
   });
+  it("não cancela consentimento quando cliente pede cancelamento da compra", () => {
+    const result=evaluateRules([base],input("Quero cancelar minha compra"),null);
+    expect(result.source).not.toBe("policy");
+  });
   it("condições AND/OR usam campos canônicos e ignoram dados ausentes", () => {
     const conditioned: EngineRule = {...base, conditions: {match:"all", conditions:[
       {field:"message.text", op:"contains", value:"comprar"},
