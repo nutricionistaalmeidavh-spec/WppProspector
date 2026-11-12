@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
+import { useSession } from "@/auth/session";
 import { Clock3, MessageSquareText, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
@@ -36,6 +38,7 @@ const matchNames:Record<Match,string>={equals:"Texto exato",contains:"Contém te
 const states:Record<Followup["state"],string>={pending:"Agendado",sending:"Enviando",sent:"Enviado",cancelled:"Cancelado",failed:"Falhou"};
 
 export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
+  const {role}=useSession();
   const [rules,setRules]=useState<Rule[]>([]);
   const [followups,setFollowups]=useState<Followup[]>([]);
   const [enabled,setEnabled]=useState(false);
@@ -97,6 +100,7 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
     clearForm();setMessage(embedded?"Regra salva no rascunho; teste antes de publicar.":"Regra salva.");
   }
 
+  if(role==="admin"&&!embedded)return <Navigate to="/settings/business-ai?step=rules" replace/>;
   return <div className="space-y-6">
     {!embedded?<PageHeader eyebrow="Atendimento" title="Automações" description="Gatilhos, respostas, menus e follow-ups locais. As regras são aplicadas antes da IA." />:
       <p className="text-sm text-muted-foreground">Edite gatilhos e menus nesta central. As mudanças ficam em rascunho até a publicação. Follow-ups continuam sujeitos ao consentimento.</p>}
