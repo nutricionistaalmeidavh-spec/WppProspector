@@ -7,11 +7,7 @@ import type { DatabaseSync } from "node:sqlite";
 export function automaticRepliesEnabled(db: DatabaseSync): boolean {
   const row = db.prepare("SELECT status FROM onboarding_setup_steps WHERE step='rules'")
     .get() as {status:string}|undefined;
-  if (row) {
-    if (row.status !== "completed") return false;
-    const active = db.prepare("SELECT 1 FROM automation_rules WHERE enabled=1 LIMIT 1").get();
-    return Boolean(active);
-  }
+  if (row) return row.status === "completed";
   // Uma instalação recém-inicializada não deve responder sem aceite.
   const started = db.prepare("SELECT 1 FROM onboarding_setup_steps LIMIT 1").get();
   if (started) return false;
