@@ -61,7 +61,7 @@ test("desktop: configuração P0–P2, tour e primeira oportunidade em banco can
   await capture(page, info, "04-desktop-whatsapp-opcional");
   await page.getByRole("button", { name: "Continuar sem conectar" }).click();
   await expect(page.getByText("Automação e inteligência artificial")).toBeVisible();
-  await expect(page.getByText(/Motor de regras local — R\$ 0/)).toBeVisible();
+  await expect(page.getByText("Atendimento manual — recomendado para começar")).toBeVisible();
   await capture(page, info, "05-desktop-motor-gratuito");
   await page.getByRole("button", { name: "Configurar mais tarde" }).click();
   await expect(page.getByText("Revise sua configuração")).toBeVisible();
@@ -173,4 +173,31 @@ test("mobile e tablet: navegação, Kanban e layout sem overflow global", async 
   } finally {
     await tabletContext.close();
   }
+});
+
+
+test("opt-in: regras setoriais só são publicadas depois de simuladas e aprovadas",async ({page},info)=>{
+  await login(page);
+  await page.goto("/admin/onboarding");
+  await expect(page.getByText("Revise sua configuração")).toBeVisible();
+  await page.getByRole("button",{name:"Voltar"}).click();
+  await expect(page.getByText("Como deseja atender pelo WhatsApp?")).toBeVisible();
+  await page.getByRole("radio",{name:/Preparar respostas automáticas/}).check();
+  await page.getByRole("button",{name:"Preparar regras em rascunho"}).click();
+  await expect(page.getByText("Orçamento de serviços")).toBeVisible();
+  const before=await page.request.get("/admin/api/onboarding/state");
+  expect((await before.json()).setup.rules).toBe("skipped");
+  await capture(page,info,"23-desktop-regras-setoriais-rascunho");
+  await page.getByRole("button",{name:"Simular regras sugeridas"}).click();
+  await expect(page.getByText(/Resposta simulada: Orçamento de serviços/)).toBeVisible();
+  await page.getByRole("checkbox",{name:/Revisei e aprovo o envio automático/}).check();
+  await page.getByRole("button",{name:"Aprovar e ativar respostas automáticas"}).click();
+  await expect(page.getByText("Motor local aprovado e ativo")).toBeVisible();
+  await capture(page,info,"24-desktop-regras-aprovadas");
+  const after=await page.request.get("/admin/api/onboarding/state");
+  expect((await after.json()).setup.rules).toBe("completed");
+  const studio=await page.request.get("/admin/api/business/studio");
+  const data=await studio.json();
+  expect(data.rulesDraft.published).toBe(true);
+  expect(data.rulesDraft.items.length).toBeGreaterThanOrEqual(2);
 });
