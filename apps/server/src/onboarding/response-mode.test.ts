@@ -16,7 +16,8 @@ describe("WhatsApp manual e opt-in do motor de respostas", () => {
       db.exec("INSERT INTO onboarding_setup_steps VALUES ('rules','skipped')");
       expect(automaticRepliesEnabled(db)).toBe(false);
       db.exec("UPDATE onboarding_setup_steps SET status='completed' WHERE step='rules'");
-      expect(automaticRepliesEnabled(db)).toBe(false);
+      // Instalações anteriores podem ter confirmado o motor local sem criar regras explícitas.
+      expect(automaticRepliesEnabled(db)).toBe(true);
       db.exec("INSERT INTO automation_rules VALUES (1)");
       expect(automaticRepliesEnabled(db)).toBe(true);
       db.exec("UPDATE onboarding_setup_steps SET status='skipped' WHERE step='rules'");
