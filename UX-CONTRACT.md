@@ -1,34 +1,43 @@
 # WppProspector — contrato de comportamento
 
-## Escopo e fonte canônica
-Uma instalação = uma empresa, SQLite local canônico para perfis e pedidos importados. As integrações são opcionais e não substituem os dados de leads, clientes e conversas já existentes.
+## Produto e canonicidade
+Uma instalação corresponde a uma empresa. SQLite local é a fonte canônica de empresa, regras, credenciais e dados comerciais importados. Estoque não é contabilização de reserva nem autorização de venda. Nenhuma API comercial é pré-requisito para inicializar o CRM.
 
-## Contrato de publicação
-- Mudanças de perfil são gravadas no rascunho, sem alterar a fonte ativa.
-- A publicação explícita registra revisão; falhas preservam o rascunho.
-- Histórico permite restauração com confirmação inline e registro de nova revisão; restauração não altera credenciais.
-- Alterações de provedor/modelo são preparadas separadamente; a ativação requer ação distinta.
-- Padrão sempre é regras locais R$0. Nenhuma API paga é requisito de boot.
+## Configuração inicial P0
+- A Central apresenta etapas: visão geral, empresa, conhecimento, regras/automação, inteligência, laboratório, estoque/pedidos e histórico.
+- Salvar configurações de perfil, regras ou IA **não ativa** alterações. Rascunhos ficam separados da versão publicada.
+- Uma simulação bem-sucedida e correspondente ao rascunho é exigida **no servidor** antes de publicar. O hash da configuração aprovada expira após cada edição.
+- Para regras, simular texto disparador não cria sessão de menu, agendamento ou envio de WhatsApp.
+- O administrador edita regras diretamente na Central; o link antigo de automações encaminha a esse editor. A API legada é mantida por compatibilidade.
+- A API de perfil e a API de provedor legadas são reservadas a administrações e compatibilidade; os fluxos da Central usam rascunho/publicação explícitos.
 
-## Laboratório
-- Regras automáticas precedem motor LLM.
-- A simulação jamais chama o gateway WhatsApp nem persiste menu ou follow-up.
-- Sem consentimento de cobrança, a simulação usa exclusivamente o motor local.
-- Solicitação paga exige consentimento explícito por execução, nunca implícito em salvar.
-- Publicar motor somente quando o motor correspondente foi testado no painel.
+## Laboratório e diagnóstico P1
+- Regras têm prioridade sobre o modelo de atendimento.
+- Resposta do modo gratuito é produzida localmente; nenhuma credencial paga é necessária.
+- A simulação **não** chama o gateway do WhatsApp.
+- Sem consentimento, o preview de qualquer provedor comercial cai para regras locais e **não** autoriza a publicação do provedor pago.
+- Diagnóstico de conexão/modelo para endpoint próprio ou comercial exige autorização explícita por chamada; não encaminha dados pessoais.
+- Provedores externos podem consumir créditos somente após seleção deliberada e consentimento explícito.
+- Erros ao diagnosticar são categorizados sem ecoar token, corpo da resposta nem endereço privado.
+- O histórico permite restaurar perfil, regras e seleção de IA. Chaves de API não são incluídas em snapshots, e restauração de modelo comercial exige que a chave ainda exista.
 
-## Comércio
-- Produtos e pedidos Shopify são lidos pelo backend após clique explícito.
-- Token armazenado cifrado; GET não devolve segredo; apagar conexão não apaga banco.
-- Catálogo complementar só é consultado pelo bot quando ativado.
-- Pedidos não são compartilhados com LLM nem retornados ao cliente via WhatsApp.
-- Estoque importado é fotografia do sincronismo, não promessa de tempo real.
-- Sincronização atual consulta no máximo 50 produtos e 50 pedidos; demais dados exigem paginação futura.
+## Estoque e pedidos P2
+- Integração genérica funciona por HTTP local com token aleatório de alta entropia, exibido uma vez, guardado como hash SHA-256, revogável e rotacionável.
+- Endpoint: `POST /admin/integrations/commerce/v1/sync`, header `Authorization: Bearer TOKEN`.
+- Corpo: `products` com id, name, sku, price, stock; `orders` com id, number, financialStatus, fulfillmentStatus, total, createdAt.
+- Não aceitar campos adicionais de pedidos com dados pessoais. O backend impõe limites de linhas por solicitação.
+- Produtos enviados por integração substituem atomicamente **somente** a fotografia da origem integração; produtos manuais e Shopify opcionais são preservados. Pedidos têm upsert por ID externo.
+- Catálogo só entra no contexto comercial do bot quando explicitamente ativado; dados de pedidos nunca são adicionados ao prompt.
+- Saldo é fotografia do instante de sincronização. A aplicação não promete disponibilidade em tempo real.
+- Shopify permanece conector específico opt-in e não é dependência, fonte central nem padrão.
 
-## Regras de UI
-- Navegação horizontal de etapas sempre mantém os rascunhos locais durante navegação interna.
-- Carregamento, operação em andamento, falha e sucesso devem estar visíveis; erro preserva entradas.
-- Botões de publicar e ativar são distintos de salvar rascunho.
-- Avisos financeiros devem aparecer antes de chamada externa, com opt-in desmarcado.
-- Diálogos de ações reversíveis de alto impacto exigem confirmação.
-- Campos de senha mascarados; nunca ecoar segredos em URLs, erros ou toasts.
+## Autenticação e falhas
+- Mudanças na Central exigem sessão de administrador. O endpoint genérico de sincronização exige token próprio, independente do cookie.
+- Revogar/rotacionar invalida imediatamente o token antigo. Segredos não aparecem em GET, histórico ou mensagens de erro.
+- Rascunhos e contexto publicado sobrevivem a falhas de teste sem ativação parcial.
+- Recuperação e publicação registram revisões; nenhum mecanismo deve alterar pedidos/estoque ao restaurar versões de IA ou de perfil.
+
+## Interface
+- Entradas possuem estado de carregamento, feedback de sucesso/erro e impedimento de ação enquanto ocupadas.
+- Botões de salvar, testar, ativar, restaurar e revogar são distintos; restauração pede confirmação inline.
+- Estilo e primitivas canônicas estão definidos em DESIGN.md. Nunca criar tema paralelo ou alterar breadcrumbs em uma funcionalidade.

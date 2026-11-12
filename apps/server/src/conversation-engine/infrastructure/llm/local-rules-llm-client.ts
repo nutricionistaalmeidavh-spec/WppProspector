@@ -5,8 +5,10 @@ const normalize = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036
 const fallback = "Vou confirmar essa informação com nossa equipe para não passar dados incorretos.";
 
 /** Respostas determinísticas usando SOMENTE o cadastro canônico desta instalação. */
+export type LocalCatalogItem = {name:string;sku:string;price:string;stock:number|null;syncedAt:string};
 export class LocalRulesLlmClient implements LlmClientPort {
-  constructor(private readonly business: () => BusinessProfile | undefined = () => undefined) {}
+  constructor(private readonly business: () => BusinessProfile | undefined = () => undefined,
+    private readonly catalog: () => readonly LocalCatalogItem[] = () => []) {}
 
   async generate(request: LlmRequest): Promise<LlmResponse> {
     // Histórico não deve contaminar a identificação do produto solicitado agora.
@@ -29,12 +31,23 @@ export class LocalRulesLlmClient implements LlmClientPort {
         const words = normalize(candidate).split(/[^a-z0-9]+/).filter(Boolean);
         return words.length > 0 && words.every(word => terms.has(word));
       };
-      const product = company?.products.find(p => matches(p.name));
+      const commerceProduct=this.catalog().find(p=>matches(p.name)||(p.sku&&terms.has(normalize(p.sku))));
+      const product = commerceProduct ?? company?.products.find(p => matches(p.name));
+      const asksStock=/\b(estoque|disponivel|disponibilidade|tem|quantidade)\b/.test(normalized);
       const knownFaq = company?.faq.find(x => matches(x.question));
       let answer = "";
       let unknown = false;
       if (knownFaq) answer = knownFaq.answer;
-      else if (product) answer = [product.name, product.description, product.price ? "Preço: " + product.price : ""].filter(Boolean).join(" — ");
+      else if (product) {
+        answer = [product.name,"description" in product ? product.description : "",
+          product.price ? "Preço: " + product.price : ""].filter(Boolean).join(" — ");
+        if(asksStock){
+          const stock=commerceProduct?.stock;
+          answer += stock==null?" — Estoque não confirmado; consulte nossa equipe.":
+            " — Saldo da última sincronização: "+stock+" unidade(s). Confirme disponibilidade com nossa equipe.";
+          unknown=true;
+        }
+      }
       else if (/\b(horario|abre|aberto|funciona|funcionamento|fecha)\b/.test(normalized)) answer = company?.openingHours ?? "";
       else if (/\b(entrega|frete|envio|enviar|delivery)\b/.test(normalized)) answer = company?.deliveryPolicy ?? "";
       else if (/\b(troca|devolucao|devolver|garantia)\b/.test(normalized)) answer = company?.returnPolicy ?? "";
