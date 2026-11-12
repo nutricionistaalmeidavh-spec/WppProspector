@@ -31,12 +31,17 @@ describe("primeiro acesso CRM", () => {
   });
 
   it("oferece perfil rápido de Clínica de Estética sem sobrepor serviços reais nem ativar automações", async () => {
+    let currentState=state();
     const calls = installFetchMock({
       "GET /stats/overview": { body: overview() },
-      "GET /onboarding/state": { body: state() },
+      "GET /onboarding/state": { body: () => currentState },
       "GET /business/profile": { body: profile },
       "PUT /business/profile": { body: (body: unknown) => body },
-      "PUT /onboarding/setup": { body: { ok: true } },
+      "PUT /onboarding/setup": { body: (body: unknown) => {
+        const payload=body as {step:keyof ReturnType<typeof state>["setup"];status:"completed"|"skipped"};
+        currentState={...currentState,setup:{...currentState.setup,[payload.step]:payload.status}};
+        return {ok:true};
+      } },
     });
     renderApp(["/onboarding"]);
     const user = userEvent.setup();
