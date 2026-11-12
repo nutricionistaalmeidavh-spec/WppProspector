@@ -48,7 +48,7 @@ export const followupInputSchema = z.object({
 });
 export type FollowupInput = z.input<typeof followupInputSchema>;
 export interface Followup {
-  id: string; phone: string; message: string; dueAt: string;
+  id: string; phone: string; message: string; dueAt: string; channelKey:string;
   state: "pending"|"sending"|"sent"|"cancelled"|"failed";
   attempts: number; nextAttemptAt: string | null; lastError: string | null;
 }
@@ -60,7 +60,8 @@ export function renderAutomationTemplate(source:string, phone:string, inboundTex
 }
 
 export class AutomationStore {
-  constructor(private readonly db: DatabaseSync, private readonly clock = () => new Date()) {}
+  constructor(private readonly db: DatabaseSync, private readonly clock = () => new Date(),
+    private readonly channelKey:()=>string=()=>"default") {}
 
   listRules(): Rule[] {
     const rows = this.db.prepare("SELECT * FROM automation_rules ORDER BY priority DESC, created_at, id").all() as Record<string,unknown>[];
@@ -139,8 +140,8 @@ export class AutomationStore {
     if(!consent.canProspect(value.phone))throw new Error("Agendamento exige consentimento vigente.");
     const now=this.clock().toISOString(),id=randomUUID();
     this.db.prepare(`INSERT INTO automation_followups
-      (id,phone,message,due_at,state,attempts,created_at,updated_at) VALUES (?,?,?,?,'pending',0,?,?)`)
-      .run(id,value.phone,value.message,new Date(value.dueAt).toISOString(),now,now);
+      (id,phone,message,due_at,channel_key,state,attempts,created_at,updated_at) VALUES (?,?,?,?,?,'pending',0,?,?)`)
+      .run(id,value.phone,value.message,new Date(value.dueAt).toISOString(),this.channelKey(),now,now);
     return this.getFollowup(id)!;
   }
   listFollowups():Followup[]{
@@ -157,12 +158,12 @@ export class AutomationStore {
   }
   cancelForReply(phone:string):number{
     return Number(this.db.prepare(`UPDATE automation_followups SET state='cancelled',updated_at=?
-      WHERE phone=? AND state='pending'`).run(this.clock().toISOString(),phone).changes);
+      WHERE phone=? AND channel_key=? AND state='pending'`).run(this.clock().toISOString(),phone,this.channelKey()).changes);
   }
   due(limit=50):Followup[]{
     const rows=this.db.prepare(`SELECT * FROM automation_followups WHERE state='pending'
-      AND due_at<=? AND (next_attempt_at IS NULL OR next_attempt_at<=?)
-      ORDER BY due_at,id LIMIT ?`).all(this.clock().toISOString(),this.clock().toISOString(),limit) as Record<string,unknown>[];
+      AND channel_key=? AND due_at<=? AND (next_attempt_at IS NULL OR next_attempt_at<=?)
+      ORDER BY due_at,id LIMIT ?`).all(this.channelKey(),this.clock().toISOString(),this.clock().toISOString(),limit) as Record<string,unknown>[];
     return rows.map(row=>this.followupRow(row));
   }
   claim(id:string):boolean{
@@ -198,7 +199,7 @@ export class AutomationStore {
   }
   private followupRow(r:Record<string,unknown>):Followup{
     return {
-      id:String(r.id),phone:String(r.phone),message:String(r.message),dueAt:String(r.due_at),
+      id:String(r.id),phone:String(r.phone),message:String(r.message),dueAt:String(r.due_at),channelKey:String(r.channel_key??"default"),
       state:r.state as Followup["state"],attempts:Number(r.attempts),
       nextAttemptAt:r.next_attempt_at==null?null:String(r.next_attempt_at),
       lastError:r.last_error==null?null:String(r.last_error),
