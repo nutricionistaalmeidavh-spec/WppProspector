@@ -11,6 +11,19 @@ const faq = z.object({
   question: z.string().trim().min(1).max(300),
   answer: z.string().trim().min(1).max(2000),
 });
+const semanticSearchSchema=z.object({
+  enabled:z.boolean().default(false),
+  endpoint:z.string().trim().max(500).default(""),
+  model:z.string().trim().max(120).default(""),
+}).strict().superRefine((value,context)=>{
+  if(!value.enabled)return;
+  if(!value.model)context.addIssue({code:"custom",path:["model"],message:"Informe o modelo de embeddings self-hosted."});
+  try{validateSemanticEndpoint(value.endpoint);}catch{
+    context.addIssue({code:"custom",path:["endpoint"],message:"Informe um endpoint /v1/embeddings válido (HTTPS ou localhost)."});
+  }
+});
+export type SemanticSearchSettings=z.infer<typeof semanticSearchSchema>;
+
 export const businessSchema = z.object({
   name: z.string().trim().max(160).default(""),
   segment: z.string().trim().max(160).default(""),
@@ -22,6 +35,7 @@ export const businessSchema = z.object({
   additionalInstructions: z.string().trim().max(3000).default(""),
   products: z.array(item).max(100).default([]),
   faq: z.array(faq).max(50).default([]),
+  semanticSearch: semanticSearchSchema.default({enabled:false,endpoint:"",model:""}),
 }).strict();
 export type BusinessProfile = z.infer<typeof businessSchema>;
 export const aiInputSchema = z.object({
@@ -268,5 +282,17 @@ export function validateCompatibleEndpoint(value:string):string {
     !url.pathname.endsWith("/chat/completions")) {
     throw new Error("Use HTTPS ou loopback local, com endpoint /v1/chat/completions e sem credenciais na URL.");
   }
+  return url.toString();
+}
+
+/** Apenas endpoint explicitamente selecionado; nenhum serviço ou chave é obrigatório. */
+export function validateSemanticEndpoint(value:string):string {
+  let url:URL;
+  try{url=new URL(value);}catch{throw new Error("URL de embeddings inválida.");}
+  const loopback=["localhost","127.0.0.1","[::1]"].includes(url.hostname);
+  if(!(url.protocol==="https:"||(url.protocol==="http:"&&loopback)) ||
+    url.username || url.password || url.search || url.hash ||
+    !url.pathname.endsWith("/v1/embeddings"))
+    throw new Error("Use HTTPS ou loopback local e endpoint /v1/embeddings sem credenciais.");
   return url.toString();
 }
