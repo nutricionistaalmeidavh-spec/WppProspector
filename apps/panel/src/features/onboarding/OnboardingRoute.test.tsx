@@ -27,6 +27,7 @@ describe("primeiro acesso CRM", () => {
     await user.click(screen.getByRole("button", { name: "Salvar e continuar" }));
     await waitFor(() => expect(calls.calls.some(c => c.method === "PUT" && c.url.endsWith("/business/profile"))).toBe(true));
     expect(await screen.findByText("Seu funil comercial")).toBeInTheDocument();
+    expect(screen.getByText("Entender a necessidade do cliente")).toBeInTheDocument();
   });
 
   it("exibe link de retomada sem exigir API paga", async () => {

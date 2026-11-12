@@ -28,6 +28,29 @@ const templates = [
   {label:"Saúde e bem-estar",value:"Saúde e bem-estar"},
 ];
 const stages = ["Novo", "Contatado", "Respondeu", "Qualificado", "Reunião", "Proposta", "Negociação", "Ganho", "Perdido"];
+type IndustryGuidance = { funnel: string[]; rules: string[] };
+const industryGuidance: Record<string, IndustryGuidance> = {
+  "Comércio": {
+    funnel: ["Identificar o produto procurado", "Confirmar disponibilidade e preço no catálogo real", "Acompanhar proposta e decisão"],
+    rules: ["Quando perguntarem sobre produto: responder apenas com informações do catálogo cadastrado.", "Quando perguntarem por entrega: consultar a política de entrega da empresa.", "Sem preço cadastrado: encaminhar para atendimento humano."],
+  },
+  "Serviços": {
+    funnel: ["Entender a necessidade do cliente", "Avaliar disponibilidade de agenda", "Apresentar proposta e acompanhar retorno"],
+    rules: ["Pedir contexto básico do serviço sem exigir dados sensíveis.", "Se não houver valor cadastrado, oferecer atendimento humano.", "Agendamento somente com confirmação explícita do cliente."],
+  },
+  "Construção e engenharia": {
+    funnel: ["Identificar local e escopo do serviço", "Combinar visita técnica quando necessária", "Preparar orçamento e acompanhar negociação"],
+    rules: ["Solicitar tipo e localização aproximada do projeto.", "Orientar para visita técnica em demandas que exigem levantamento.", "Não inventar quantitativos, prazos, valores ou garantias."],
+  },
+  "Saúde e bem-estar": {
+    funnel: ["Identificar o serviço desejado", "Orientar sobre disponibilidade de consulta", "Confirmar atendimento sem expor dados pessoais"],
+    rules: ["Não solicitar detalhes médicos sensíveis pelo fluxo comercial.", "Não inventar orientações clínicas, preços ou horários.", "Direcionar dúvidas técnicas para profissional responsável."],
+  },
+  "default": {
+    funnel: ["Identificar a necessidade", "Qualificar a oportunidade", "Apresentar a proposta e acompanhar o retorno"],
+    rules: ["Responder usando apenas os dados cadastrados da empresa.", "Encaminhar dúvidas sem resposta conhecida para atendimento humano.", "Nunca enviar mensagem ou ativar regra sem configuração explícita."],
+  },
+};
 
 export function OnboardingRoute() {
   const {role}=useSession();
@@ -63,6 +86,7 @@ export function OnboardingRoute() {
   </div>;
 
   const current=steps[stepIndex]!;
+  const guidance=industryGuidance[profile.segment] ?? industryGuidance.default!;
   async function saveStep(step:SetupStep,status:"completed"|"skipped") {
     setBusy(true);setError("");setNotice("");
     try {
@@ -134,6 +158,13 @@ export function OnboardingRoute() {
         <div className="flex flex-wrap gap-2">{stages.map((stage,index)=><span key={stage} className="rounded-lg border bg-muted/40 px-3 py-2 text-xs">{index+1}. {stage}</span>)}</div>
         <div className="flex items-start gap-2 rounded-lg border p-3 text-sm"><CheckCircle2 className="h-4 w-4 shrink-0 text-primary"/>
           <span>Leads, empresas e oportunidades usam os cadastros reais e uma fonte canônica. O funil não requer WhatsApp nem IA paga.</span></div>
+        <div className="space-y-2 rounded-xl border p-4">
+          <h3 className="text-sm font-semibold">Exemplo de fluxo para {profile.segment || "sua empresa"}</h3>
+          <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
+            {guidance.funnel.map(item=><li key={item}>{item}</li>)}
+          </ol>
+          <p className="text-xs text-muted-foreground">Sugestão de organização comercial: não modifica as etapas reais do Kanban.</p>
+        </div>
         <p className="text-xs text-muted-foreground">A personalização das etapas não está incluída nesta configuração inicial; você está confirmando as etapas existentes.</p>
       </div>:null}
       {stepIndex===2?<div className="space-y-4">
@@ -161,6 +192,13 @@ export function OnboardingRoute() {
           <div><p className="font-medium">IA externa — opcional</p><p className="mt-1 text-sm text-muted-foreground">Anthropic, OpenAI ou servidor próprio são configurados separadamente, sem ativação ou cobrança automática.</p>
             <Link to="/settings/business-ai" className="mt-2 inline-flex text-sm text-primary hover:underline">Configurar motor de regras / IA</Link></div>
         </div>
+        <div className="space-y-2 rounded-xl border p-4">
+          <h3 className="text-sm font-semibold">Regras sugeridas para {profile.segment || "sua empresa"}</h3>
+          <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
+            {guidance.rules.map(item=><li key={item}>{item}</li>)}
+          </ul>
+          <p className="text-xs text-muted-foreground">Apenas orientações. Nenhuma regra será cadastrada ou ativada automaticamente; revise as políticas reais no Motor de Regras / IA.</p>
+        </div>
         <p className="text-xs text-muted-foreground">Continuar apenas confirma que você conhece as opções. Não altera o provedor atualmente ativo.</p>
       </div>:null}
       {stepIndex===4?<div className="space-y-4">
@@ -178,7 +216,7 @@ export function OnboardingRoute() {
         <div className="flex flex-wrap gap-2">
           {stepIndex===2?<Button variant="ghost" disabled={busy} onClick={()=>void saveStep("whatsapp","skipped")}>Continuar sem conectar</Button>:null}
           {stepIndex===3?<Button variant="ghost" disabled={busy} onClick={()=>void saveStep("rules","skipped")}>Configurar mais tarde</Button>:null}
-          <Button disabled={busy||(stepIndex===2&&channel==="later"&&false)} onClick={()=>{
+          <Button disabled={busy} onClick={()=>{
             if(stepIndex===2&&channel!=="later") {void verifyWhatsApp();return;}
             void saveStep(current.id,stepIndex===2?"skipped":"completed");
           }}>
