@@ -38,6 +38,7 @@ import { DurableWhatsappGateway } from "./whatsapp-connectivity/infrastructure/g
 import { SqliteConsentStore } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
 import { SqliteOutbox } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-outbox.ts";
 import { SqliteInboundJournal } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-inbound-journal.ts";
+import { WhatsappContactsStore } from "./whatsapp-connectivity/infrastructure/persistence/whatsapp-contacts-store.ts";
 import { optOutRequested } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
 import { NoopMessagingCostRecorder } from "./whatsapp-connectivity/infrastructure/persistence/noop-messaging-cost-recorder.ts";
 import { SqliteMessagingCostRecorder } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-messaging-cost-recorder.ts";
@@ -118,6 +119,7 @@ const llmClient = new ConfigurableBusinessLlm(businessAiStore,()=>studioContext.
 const consentStore = new SqliteConsentStore(database);
 const outbox = new SqliteOutbox(database);
 const inboundJournal = new SqliteInboundJournal(database);
+const contactDirectory = new WhatsappContactsStore(database);
 const automationStore = new AutomationStore(database);
 const crmStore = new CrmStore(database);
 // O core permanece local/gratuito. Canais oficiais são um opt-in criptografado.
@@ -304,6 +306,15 @@ if (isMainModule) {
         handleInboundMessage.execute(message);
         void acknowledgeInbound(message.id).catch((error: unknown) =>
           logger.error("Falha ao confirmar evento Baileys", { error: String(error) }));
+      },
+      contacts(contacts) {
+        try {
+          for (let index=0;index<contacts.length;index+=2000)
+            contactDirectory.upsertMany(contacts.slice(index,index+2000), "baileys");
+        }
+        catch (error) { logger.warn("Falha na sincronização local de contatos", {
+          error: error instanceof Error ? error.message : String(error),
+        }); }
       },
     }).catch((error: unknown) => {
       logger.error("Gateway WhatsApp local indisponível; CRM permanece acessível", {
