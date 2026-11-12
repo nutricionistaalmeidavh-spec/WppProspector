@@ -112,7 +112,7 @@ function localEncryptionKey(): string {
 }
 const businessAiStore = new BusinessAiStore(database, localEncryptionKey());
 const studioContext = new BusinessStudioStore(database, businessAiStore);
-const llmClient = new ConfigurableBusinessLlm(businessAiStore,()=>studioContext.activeCatalog());
+const llmClient = new ConfigurableBusinessLlm(businessAiStore,()=>studioContext.activeCatalog(),question=>studioContext.searchCatalog(question));
 
 // O núcleo funciona sem Meta/Anthropic; ambos permanecem como opt-ins.
 const consentStore = new SqliteConsentStore(database);
