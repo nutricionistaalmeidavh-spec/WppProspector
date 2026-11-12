@@ -33,6 +33,7 @@ import { createAdminSessionGuard } from "./session-guard.ts";
 import type { AutomationStore } from "../../../automation/automation-store.ts";
 import { registerAutomationRoutes } from "../../../automation/automation.routes.ts";
 import { CrmStore } from "../../../crm/crm-store.ts";
+import {listArtisysCommerceSales} from "../../../integrations/artisys-commerce.routes.ts";
 import { registerCrmRoutes } from "../../../crm/crm-routes.ts";
 import { TeamStore } from "../../../team/team-store.ts";
 import { registerTeamRoutes } from "../../../team/team.routes.ts";
@@ -155,6 +156,7 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
       crmStage:opportunity.stage,crmOpportunityId:opportunity.id,
     }),
   });
+  app.get("/api/crm/external-sales",async()=>({items:listArtisysCommerceSales(deps.db)}));
   await app.register(registerOnboardingRoutes, { db: deps.db, sessionSecret: deps.config.sessionSecret, clock });
   await app.register(registerWhatsAppContactsRoutes, {
     store: new WhatsappContactsStore(deps.db, clock), leads: deps.leads,

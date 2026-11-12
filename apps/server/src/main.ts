@@ -46,6 +46,7 @@ import { buildFastifyServer } from "./whatsapp-connectivity/infrastructure/http/
 import { ConsoleLogger } from "./whatsapp-connectivity/infrastructure/logging/console-logger.ts";
 import { AutomationStore } from "./automation/automation-store.ts";
 import { CrmStore } from "./crm/crm-store.ts";
+import {registerArtisysCommerceInboundRoutes} from "./integrations/artisys-commerce.routes.ts";
 import { FollowupScheduler } from "./automation/followup-scheduler.ts";
 import { OutboundTextMessage } from "./whatsapp-connectivity/domain/outbound-text-message.ts";
 
@@ -281,6 +282,13 @@ export const app = buildFastifyServer({
       }
     : undefined,
 });
+
+// Venda externa opcional: preserva leads.phone, conversas e integrações WhatsApp.
+if(process.env.ARTISYS_COMMERCE_INBOUND_SECRET){
+  app.register(registerArtisysCommerceInboundRoutes,{
+    db:database,secret:process.env.ARTISYS_COMMERCE_INBOUND_SECRET
+  });
+}
 
 const isMainModule = process.argv[1] !== undefined &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
