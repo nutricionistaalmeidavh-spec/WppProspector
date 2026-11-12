@@ -46,19 +46,10 @@ export interface Followup {
   attempts: number; nextAttemptAt: string | null; lastError: string | null;
 }
 
-const normalize = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim().replace(/\s+/g," ");
-
-/** Templates textuais apenas com variáveis explícitas e valores locais. */
+/** Templates antigos preservados para a API e migrações existentes. */
 export function renderAutomationTemplate(source:string, phone:string, inboundText:string):string {
-  return source.replace(/\{(telefone|mensagem)\}/g, (_token:string,key:string)=>
+  return source.replace(/\\{(telefone|mensagem)\\}/g, (_token:string,key:string)=>
     key==="telefone" ? phone : inboundText.slice(0,500));
-}
-function decision(replyMessages: string[], handoffToHuman = false): BotDecisionInput {
-  return {
-    replyMessages, endConversation: false, leadIntent: "needs_more_info",
-    leadQualification: null, handoffToHuman, reasoning: "Automação determinística configurada.",
-    recommendedModules: [], interestedModules: [], quotedPlan: null,
-  };
 }
 
 export class AutomationStore {
