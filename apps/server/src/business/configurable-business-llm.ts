@@ -1,6 +1,6 @@
-import type { LlmClientPort, LlmRequest, LlmResponse } from "../../conversation-engine/application/ports/llm-client.port.ts";
-import { AnthropicLlmClient } from "../../conversation-engine/infrastructure/llm/anthropic-llm-client.ts";
-import { LocalRulesLlmClient } from "../../conversation-engine/infrastructure/llm/local-rules-llm-client.ts";
+import type { LlmClientPort, LlmRequest, LlmResponse } from "../conversation-engine/application/ports/llm-client.port.ts";
+import { AnthropicLlmClient } from "../conversation-engine/infrastructure/llm/anthropic-llm-client.ts";
+import { LocalRulesLlmClient } from "../conversation-engine/infrastructure/llm/local-rules-llm-client.ts";
 import { OpenAiChatClient } from "./openai-chat-client.ts";
 import type { BusinessAiStore } from "./business-ai-store.ts";
 
