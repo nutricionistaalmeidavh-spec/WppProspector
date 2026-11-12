@@ -17,15 +17,14 @@ export interface ExtractionSignals {
 /** Prompt da chamada #1 (extração de sinais de busca). */
 export const EXTRACTION_SYSTEM_PROMPT = [
   "Você é um extrator de sinais de busca para um sistema de recuperação de",
-  "conhecimento comercial sobre o ecossistema Obra na Mão / FluxoDRE (gestão para",
-  "construção civil).",
+  "conhecimento comercial da empresa cadastrada nesta instalação do CRM.",
   "",
   "A partir das mensagens mais recentes do lead (e do histórico, se houver),",
   "identifique:",
   "- temas: assuntos concretos mencionados ou implícitos;",
   "- dores: problemas, necessidades ou dificuldades do lead, em linguagem de negócio;",
   "- modulosProvaveis: módulos que provavelmente atendem o lead, em palavras-chave",
-  "  (ex.: 'presença', 'frentes', 'DRE', 'conciliação financeira', 'universidade').",
+  "  (somente quando citados ou inferidos do texto).",
   "",
   "Regras:",
   "- Extraia só o que dá para inferir das mensagens; não invente.",
