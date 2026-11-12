@@ -69,12 +69,10 @@ export class BusinessStudioStore {
     return this.getDraft();
   }
   history() {
-    const profileVersions=(this.db.prepare("SELECT revision,data_json,published_at FROM business_profile_revisions ORDER BY revision DESC LIMIT 30").all()
-      as Array<{revision:number;data_json:string;published_at:string}>)
+    const profileVersions=(this.db.prepare("SELECT revision,data_json,published_at FROM business_profile_revisions ORDER BY revision DESC LIMIT 30").all() as Array<{revision:number;data_json:string;published_at:string}>)
       .map(row=>({kind:"profile" as const,revision:row.revision,publishedAt:row.published_at,
         name:businessSchema.parse(JSON.parse(row.data_json)).name}));
-    const settingsVersions=(this.db.prepare("SELECT revision,kind,snapshot_json,published_at FROM business_settings_revisions ORDER BY revision DESC LIMIT 30").all()
-      as Array<{revision:number;kind:"engine"|"rules";snapshot_json:string;published_at:string}>)
+    const settingsVersions=(this.db.prepare("SELECT revision,kind,snapshot_json,published_at FROM business_settings_revisions ORDER BY revision DESC LIMIT 30").all() as Array<{revision:number;kind:"engine"|"rules";snapshot_json:string;published_at:string}>)
       .map(row=>({kind:row.kind,revision:row.revision,publishedAt:row.published_at,
         name:row.kind==="engine"?"Motor: "+String((JSON.parse(row.snapshot_json) as {provider:string}).provider):
           "Regras: "+String((JSON.parse(row.snapshot_json) as {items:unknown[]}).items.length)+" itens"}));
@@ -96,8 +94,7 @@ export class BusinessStudioStore {
     return this.getDraft();
   }
   private rollbackSettings(revision:number,kind:"engine"|"rules"){
-    const row=this.db.prepare("SELECT snapshot_json FROM business_settings_revisions WHERE revision=? AND kind=?").get(revision,kind)
-      as {snapshot_json:string}|undefined;
+    const row=this.db.prepare("SELECT snapshot_json FROM business_settings_revisions WHERE revision=? AND kind=?").get(revision,kind) as {snapshot_json:string}|undefined;
     if(!row)throw new Error("Revisão não encontrada.");
     const snapshot=JSON.parse(row.snapshot_json) as unknown;
     if(kind==="engine"){
@@ -206,8 +203,7 @@ export class BusinessStudioStore {
   }
 
   integrationStatus(){
-    const row=this.db.prepare("SELECT created_at,last_sync_at FROM business_commerce_integrations WHERE id=1").get()
-      as {created_at:string;last_sync_at:string|null}|undefined;
+    const row=this.db.prepare("SELECT created_at,last_sync_at FROM business_commerce_integrations WHERE id=1").get() as {created_at:string;last_sync_at:string|null}|undefined;
     return {configured:!!row,createdAt:row?.created_at??null,lastSyncAt:row?.last_sync_at??null};
   }
   rotateIntegrationToken(){
