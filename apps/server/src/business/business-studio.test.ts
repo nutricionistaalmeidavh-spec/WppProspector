@@ -49,9 +49,9 @@ describe("Business Studio P0–P2",()=>{
       expect(simulated.json().provider).toBe("rules");
       expect(simulated.json().charged).toBe(false);
       const publish=await ctx.app.inject({method:"POST",url:"/admin/api/business/studio/ai-publish",headers});
-      expect(publish.statusCode).toBe(200);
-      expect(store.getAi().provider).toBe("openai");
-      expect(store.getActiveAi().apiKey).toBe("test-private-key");
+      expect(publish.statusCode).toBe(409);
+      expect(store.getAi().provider).toBe("rules");
+      expect(store.getPreviewAi().apiKey).toBe("test-private-key");
     }finally{await ctx.close();}
   });
   it("registra novas versões e restaura uma versão anterior",async()=>{
@@ -60,8 +60,10 @@ describe("Business Studio P0–P2",()=>{
       const cookie=await ctx.login(),headers={cookie};
       const v1={...profile,name:"Empresa original"};
       await ctx.app.inject({method:"PUT",url:"/admin/api/business/studio/draft",headers,payload:v1});
+      await ctx.app.inject({method:"POST",url:"/admin/api/business/studio/simulate",headers,payload:{message:"Qual o horário de atendimento?",allowExternal:false}});
       await ctx.app.inject({method:"POST",url:"/admin/api/business/studio/publish",headers});
       await ctx.app.inject({method:"PUT",url:"/admin/api/business/studio/draft",headers,payload:{...profile,name:"Empresa nova"}});
+      await ctx.app.inject({method:"POST",url:"/admin/api/business/studio/simulate",headers,payload:{message:"Quanto custa o Tênis Verde?",allowExternal:false}});
       await ctx.app.inject({method:"POST",url:"/admin/api/business/studio/publish",headers});
       const rollback=await ctx.app.inject({method:"POST",url:"/admin/api/business/studio/rollback",headers,payload:{revision:1}});
       expect(rollback.statusCode).toBe(200);
