@@ -156,7 +156,7 @@ export function evaluateRules(rules: readonly EngineRule[], context: RuleContext
   if (!rule) return empty;
   if(rule.action==="crm_set_stage"){
     if(!context.crmOpportunityId||!rule.targetStage)return empty;
-    return {decision:decision([]),matchedRuleId:rule.id,nextMenuRuleId:null,source:"rule",action:null,
+    return {decision:decision([]),matchedRuleId:rule.id,nextMenuRuleId:null,source:"rule",
       action:{kind:"crm_set_stage",opportunityId:context.crmOpportunityId,stage:rule.targetStage}};
   }
   const response = renderRuleTemplate(rule.response,context);
@@ -165,5 +165,5 @@ export function evaluateRules(rules: readonly EngineRule[], context: RuleContext
       matchedRuleId:rule.id,nextMenuRuleId:rule.id,source:"rule",action:null};
   }
   return {decision:decision([response],rule.action==="handoff"),
-    matchedRuleId:rule.id,nextMenuRuleId:null,source:"rule"};
+    matchedRuleId:rule.id,nextMenuRuleId:null,source:"rule",action:null};
 }
