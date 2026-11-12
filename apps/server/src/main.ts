@@ -118,7 +118,7 @@ const llmClient = new ConfigurableBusinessLlm(businessAiStore,()=>studioContext.
 const consentStore = new SqliteConsentStore(database);
 const outbox = new SqliteOutbox(database);
 const inboundJournal = new SqliteInboundJournal(database);
-const automationStore = new AutomationStore(database);
+const automationStore = new AutomationStore(database,undefined,()=>connections.activeChannelKey());
 const crmStore = new CrmStore(database);
 // O core permanece local/gratuito. Canais oficiais são um opt-in criptografado.
 const channelStore = env.WHATSAPP_CREDENTIALS_KEY
