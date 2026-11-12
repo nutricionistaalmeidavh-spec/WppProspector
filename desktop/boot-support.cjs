@@ -8,9 +8,7 @@ function verifyBundledRuntime(root) {
     join('apps', 'server', 'dist', 'main.js'),
     join('apps', 'server', 'package.json'),
     join('apps', 'panel', 'dist', 'index.html'),
-    join('apps', 'server', 'dist', 'conversation-engine', 'domain', 'reply-strategy.prompt.md'),
-    join('apps', 'server', 'dist', 'conversation-engine', 'infrastructure', 'knowledge', 'sales-knowledge.md'),
-    join('apps', 'server', 'dist', 'conversation-engine', 'infrastructure', 'knowledge', 'pricing.md'),
+    join('apps', 'server', 'dist', 'conversation-engine', 'domain', 'merchant-reply.prompt.md'),
   ];
   for (const file of required) {
     if (!existsSync(join(root, file))) throw new Error('Instalador incompleto: arquivo ausente ' + file);
