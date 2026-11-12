@@ -1,10 +1,10 @@
 {
   "name":"artisys-wppprospector-desktop",
-  "version":"0.1.2",
+  "version":"0.1.3",
   "description":"WppProspector CRM — Instalador Windows com licença local",
   "author":"ArtiSys",
   "private":true,
   "main":"main.cjs",
-  "scripts":{"test":"node --test license.test.cjs","dist":"electron-builder --config electron-builder.yml --win nsis --x64 --publish never"},
+  "scripts":{"test":"node --test license.test.cjs boot-support.test.cjs","dist":"electron-builder --config electron-builder.yml --win nsis --x64 --publish never"},
   "devDependencies":{"electron":"39.0.0","electron-builder":"26.0.12"}
 }
