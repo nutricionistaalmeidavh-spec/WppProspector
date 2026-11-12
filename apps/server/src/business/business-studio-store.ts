@@ -234,11 +234,36 @@ export class BusinessStudioStore {
     const actual=Buffer.from(hash(token),"hex"),expected=Buffer.from(row.token_hash,"hex");
     return expected.length===actual.length&&timingSafeEqual(actual,expected);
   }
+  private stockSnapshot(source:"manual"|"shopify"|"integration"):Map<string,number|null>{
+    const rows=this.db.prepare("SELECT id,stock FROM business_commerce_products WHERE source=?")
+      .all(source) as Array<{id:string;stock:number|null}>;
+    return new Map(rows.map(item=>[item.id,item.stock]));
+  }
+
+  /** Somente após COMMIT e opt-in do catálogo. Falha de regra não desfaz sincronização. */
+  private notifyInventoryChanges(items:readonly {id:string;sku:string;stock:number|null}[],
+    previous:ReadonlyMap<string,number|null>):void {
+    if(!this.commerceStatus().enabled)return;
+    const automation=new AutomationStore(this.db);
+    for(const item of items){
+      if(previous.has(item.id)&&previous.get(item.id)===item.stock)continue;
+      try{
+        automation.evaluateEvent({phone:"",message:"",eventType:"commerce.inventory_updated",
+          businessId:"default",channelId:"internal:commerce",commerceSku:item.sku,
+          ...(item.stock===null?{}:{commerceStock:item.stock})});
+      }catch(error){
+        // Evento pós-commit deve ser isolado da importação já concluída.
+        console.error("Falha em regra de evento de estoque",error instanceof Error?error.message:"erro");
+      }
+    }
+  }
+
   syncIntegration(raw:unknown){
     const {products,orders}=commerceSync.parse(raw);
     if(new Set(products.map(p=>p.id)).size!==products.length)throw new Error("IDs de produtos duplicados.");
     if(new Set(orders.map(o=>o.id)).size!==orders.length)throw new Error("IDs de pedidos duplicados.");
     const now=new Date().toISOString();
+    const previous=this.stockSnapshot("integration");
     this.db.exec("BEGIN IMMEDIATE");
     try{
       // Snapshot dos produtos importados: substitui apenas a origem de integração.
@@ -253,6 +278,7 @@ export class BusinessStudioStore {
       this.db.prepare("UPDATE business_commerce_integrations SET last_sync_at=? WHERE id=1").run(now);
       this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
+    this.notifyInventoryChanges(products.map(item=>({...item,id:"integration:"+item.id})),previous);
     return {products:products.length,orders:orders.length,syncedAt:now};
   }
 
@@ -264,12 +290,14 @@ export class BusinessStudioStore {
       unique.add(item.id);
     }
     const now=new Date().toISOString();
+    const previous=this.stockSnapshot("manual");
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const stmt=this.db.prepare("INSERT INTO business_commerce_products(id,source,name,sku,price,stock,synced_at) VALUES(?,'manual',?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET source='manual',name=excluded.name,sku=excluded.sku,price=excluded.price,stock=excluded.stock,synced_at=excluded.synced_at");
       for(const item of items) stmt.run("manual:"+item.id,item.name,item.sku,item.price,item.stock,now);
       this.db.exec("COMMIT");
     } catch(error) {this.db.exec("ROLLBACK");throw error;}
+    this.notifyInventoryChanges(items.map(item=>({...item,id:"manual:"+item.id})),previous);
     return {imported:items.length,at:now};
   }
   getCatalog(limit=100): CommerceProduct[] {
@@ -362,6 +390,7 @@ export class BusinessStudioStore {
     const products=productData.products.edges.flatMap(({node})=>node.variants.edges.map(({node:variant})=>({
       id:"shopify:"+variant.id,name:node.title,sku:variant.sku??"",price:variant.price,stock:variant.inventoryQuantity,
     })));
+    const previous=this.stockSnapshot("shopify");
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const insertProduct=this.db.prepare("INSERT INTO business_commerce_products(id,source,name,sku,price,stock,synced_at) VALUES(?,'shopify',?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,price=excluded.price,stock=excluded.stock,synced_at=excluded.synced_at");
@@ -371,6 +400,7 @@ export class BusinessStudioStore {
         node.totalPriceSet.shopMoney.amount+" "+node.totalPriceSet.shopMoney.currencyCode,node.createdAt,now);
       this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
+    this.notifyInventoryChanges(products,previous);
     return {products:products.length,orders:orderData.orders.edges.length,at:now,limitedTo:50};
   }
 }
