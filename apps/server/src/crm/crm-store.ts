@@ -38,13 +38,21 @@ export class CrmStore {
   getConversationContext(phone: string) {
     const lead = this.db.prepare(`SELECT phone,display_name AS displayName,source,notes,company,segment,city,company_id AS companyId
       FROM leads WHERE phone=?`).get(phone) as (Record<string, unknown> | undefined);
-    const all = this.listOpportunities();
-    const attached = new Set((this.db.prepare("SELECT opportunity_id AS id FROM crm_opportunity_conversations WHERE lead_phone=?")
-      .all(phone) as Array<{id:string}>).map(row=>row.id));
-    const opportunities = all.filter(opp=>opp.leadPhone===phone || attached.has(opp.id));
+    const joined = `SELECT o.*,c.name AS company_name,l.display_name AS lead_name,
+      cp.name AS campaign_name,u.username AS owner_username
+      FROM crm_opportunities o JOIN crm_companies c ON c.id=o.company_id
+      JOIN leads l ON l.phone=o.lead_phone
+      LEFT JOIN crm_campaigns cp ON cp.id=o.campaign_id
+      LEFT JOIN crm_team_users u ON u.id=o.owner_user_id`;
+    const opportunities = (this.db.prepare(joined + ` WHERE o.lead_phone=? OR EXISTS (
+      SELECT 1 FROM crm_opportunity_conversations rel
+      WHERE rel.opportunity_id=o.id AND rel.lead_phone=?
+    ) ORDER BY o.updated_at DESC LIMIT 500`).all(phone,phone) as Row[]).map(row=>this.opportunityRow(row));
     const matchingCompany = lead?.companyId ? String(lead.companyId) : "";
-    // Sugestões precisam de aceite; nunca vincular só por nome ou por análise da IA.
-    const suggestions = matchingCompany ? all.filter(opp=>opp.companyId===matchingCompany && !opportunities.some(link=>link.id===opp.id)) : [];
+    // Sugestões somente por companyId canônico; confirmação humana obrigatória.
+    const suggestions = matchingCompany ? (this.db.prepare(joined + ` WHERE o.company_id=? AND o.lead_phone<>?
+      AND NOT EXISTS (SELECT 1 FROM crm_opportunity_conversations rel WHERE rel.opportunity_id=o.id AND rel.lead_phone=?)
+      ORDER BY o.updated_at DESC LIMIT 10`).all(matchingCompany,phone,phone) as Row[]).map(row=>this.opportunityRow(row)) : [];
     return { phone, exists: this.conversationExists(phone), lead: lead??null, opportunities, suggestions };
   }
   saveConversationContact(phone: string, input: {displayName?:string;company?:string;segment?:string;city?:string;notes?:string}) {
