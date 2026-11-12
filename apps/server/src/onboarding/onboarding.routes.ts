@@ -93,6 +93,11 @@ export const registerOnboardingRoutes: FastifyPluginAsync<{
       recordValidationError(actor.id,"setup");
       return reply.code(409).send({error:"Cadastre o nome e o segmento da empresa antes de concluir."});
     }
+    if (step === "rules" && status === "completed" &&
+      !db.prepare("SELECT 1 FROM automation_rules WHERE enabled=1 LIMIT 1").get()) {
+      recordValidationError(actor.id,"setup");
+      return reply.code(409).send({error:"Publique ao menos uma regra validada antes de ativar respostas automáticas."});
+    }
     if (step === "review" && status === "completed" &&
       (!profileConfigured() || setup().crm !== "completed")) {
       recordValidationError(actor.id,"setup");

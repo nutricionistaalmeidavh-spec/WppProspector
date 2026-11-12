@@ -150,6 +150,23 @@ function build(
 }
 
 describe("GenerateReplyUseCase", () => {
+  it("modo manual mantém inbound no histórico sem gerar ou enviar respostas automáticas", async () => {
+    seededConversation(repo, ["manual-1"]);
+    const llm = new ScriptedLlmClient([decisionJson()]);
+    const sender = new RecordingReplySender();
+    const useCase = new GenerateReplyUseCase({
+      repository: repo, replyStrategy: strategy(), llmClient: llm,
+      replySender: sender, businessContextProvider: new FakeBusinessContext(),
+      usageRecorder: new RecordingUsageRecorder(), logger, clock: () => t0,
+      autoReplyEnabled: () => false,
+    });
+    await useCase.execute(PHONE, ["manual-1"]);
+    expect(llm.calls).toHaveLength(0);
+    expect(sender.sent).toHaveLength(0);
+    expect((await repo.load(PHONE))?.pendingInboundTurns).toHaveLength(0);
+    expect(repo.saved).toHaveLength(1);
+  });
+
   it("mensagem única do lead gera uma única resposta enviada", async () => {
     seededConversation(repo, ["wamid.1"]);
     const llm = new ScriptedLlmClient([
