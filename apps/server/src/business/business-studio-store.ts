@@ -20,8 +20,7 @@ export class BusinessStudioStore {
   ) {}
 
   getDraft(): { profile: BusinessProfile; published: boolean; updatedAt: string | null } {
-    const row = this.db.prepare("SELECT data_json,updated_at FROM business_profile_draft WHERE id=1").get()
-      as { data_json: string; updated_at: string } | undefined;
+    const row = this.db.prepare("SELECT data_json,updated_at FROM business_profile_draft WHERE id=1").get() as { data_json: string; updated_at: string } | undefined;
     return row
       ? { profile: businessSchema.parse(JSON.parse(row.data_json)), published: false, updatedAt: row.updated_at }
       : { profile: this.ai.getBusiness(), published: true, updatedAt: null };
