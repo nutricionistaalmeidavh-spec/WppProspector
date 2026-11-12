@@ -265,7 +265,7 @@ export class BusinessStudioStore {
   }
   getCatalog(limit=100): CommerceProduct[] {
     const rows=this.db.prepare("SELECT id,source,name,sku,price,stock,synced_at FROM business_commerce_products ORDER BY name,id LIMIT ?")
-      .all(limit) as Array<{id:string;source:"manual"|"shopify";name:string;sku:string;price:string;stock:number|null;synced_at:string}>;
+      .all(limit) as Array<{id:string;source:"manual"|"shopify"|"integration";name:string;sku:string;price:string;stock:number|null;synced_at:string}>;
     return rows.map(row=>({id:row.id,source:row.source,name:row.name,sku:row.sku,price:row.price,stock:row.stock,syncedAt:row.synced_at}));
   }
   getOrders() {
@@ -286,9 +286,24 @@ export class BusinessStudioStore {
     return this.commerceStatus();
   }
   /** A IA só vê os produtos se o administrador ativou a fonte. Pedidos nunca entram no prompt. */
+  /** Fonte comercial opt-in e canônica: ERP próprio prevalece sobre conectores e planilhas. */
+  activeCatalog(limit=2500):CommerceProduct[]{
+    const status=this.db.prepare("SELECT enabled FROM business_commerce_state WHERE id=1").get() as {enabled:number}|undefined;
+    if(!status?.enabled)return [];
+    const rank:Record<CommerceProduct["source"],number>={integration:0,shopify:1,manual:2};
+    const rows=this.getCatalog(limit).sort((a,b)=>rank[a.source]-rank[b.source]);
+    const unique=new Set<string>();
+    return rows.filter(row=>{
+      const key=(row.sku.trim()?row.sku:row.name).normalize("NFD")
+        .replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+      if(unique.has(key))return false;
+      unique.add(key);
+      return true;
+    });
+  }
   activeCommerceContext(): string {
-    if(!this.commerceStatus().enabled) return "";
-    const rows=this.getCatalog(250);
+    const rows=this.activeCatalog(250);
+    if(!rows.length)return "";
     return ["CATÁLOGO COMPLEMENTAR (última sincronização, não é estoque em tempo real):",
       ...rows.map(p=>"- "+p.name+" | SKU "+p.sku+" | Preço "+(p.price||"não informado")+" | Saldo "+(p.stock??"desconhecido")+" | Atualizado "+p.syncedAt),
       "Não garanta disponibilidade ou entrega sem confirmação. Nunca cite dados de pedidos de outros clientes."].join("\n");
