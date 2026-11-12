@@ -187,9 +187,16 @@ export function OnboardingRoute() {
   async function prepareRules() {
     setBusy(true);setError("");setNotice("");
     try {
-      const existing=await apiFetch<{rulesDraft:{items:unknown[]}} >("/business/studio");
-      if(existing.rulesDraft.items.length>0)
-        throw new Error("Já existem regras cadastradas. Para não sobrescrevê-las, revise-as na Central do atendente virtual.");
+      const existing=await apiFetch<{rulesDraft:{items:SectorRuleDraft[];published:boolean}}>("/business/studio");
+      if(existing.rulesDraft.items.length>0) {
+        if(existing.rulesDraft.published)
+          throw new Error("Já existem regras publicadas. Revise-as na Central do atendente virtual sem substituí-las.");
+        setPreparedRules(existing.rulesDraft.items);
+        setSample(existing.rulesDraft.items[0]?.trigger??"preço");
+        setRulesValidated(false);setRulesConsent(false);setSimulation(null);
+        setNotice("Rascunho anterior recuperado. Simule e aprove antes de ativar.");
+        return;
+      }
       const items=buildSectorRules(profile);
       const saved=await apiFetch<{items:SectorRuleDraft[]}>("/business/studio/rules-draft",{method:"PUT",body:{items}});
       setPreparedRules(saved.items);setSample(items[0]?.trigger??"preço");
