@@ -6,7 +6,7 @@ import type { BusinessAiStore } from "./business-ai-store.ts";
  * de Obra na Mão; reconsulta SQLite em cada turno, inclusive após alterações.
  */
 export class MerchantBusinessContext implements BusinessContextProvider {
-  constructor(private readonly store: BusinessAiStore) {}
+  constructor(private readonly store: BusinessAiStore, private readonly commerceContext: ()=>string = ()=>"") {}
 
   async getContext(_input: BusinessContextInput): Promise<string> {
     const b = this.store.getBusiness();
@@ -27,6 +27,8 @@ export class MerchantBusinessContext implements BusinessContextProvider {
       "PERGUNTAS FREQUENTES:",
       ...(b.faq.length ? b.faq.map(p => "- " + p.question + ": " + p.answer) : ["Nenhuma FAQ cadastrada."]),
     ];
+    const supplemental = this.commerceContext();
+    if(supplemental) lines.push(supplemental);
     return lines.join("\n");
   }
 }
