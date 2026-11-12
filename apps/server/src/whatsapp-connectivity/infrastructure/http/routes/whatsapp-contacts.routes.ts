@@ -26,7 +26,9 @@ export const registerWhatsAppContactsRoutes: FastifyPluginAsync<{
     if (!parsed.success) return reply.code(422).send({ error: "Telefone inválido" });
     const found = store.get(parsed.data.phone);
     if (!found) return reply.code(404).send({ error: "Contato não encontrado" });
-    const lead = await leads.upsert({ phone: found.phone,
+    // Idempotente: importar agenda não sobrescreve nome ou origem curados pelo CRM.
+    const prior = await leads.findByPhone(found.phone);
+    const lead = prior ?? await leads.upsert({ phone: found.phone,
       ...(found.displayName ? { displayName: found.displayName } : {}),
       source: "whatsapp_contacts" });
     return reply.send({ phone: lead.phone, displayName: lead.displayName });
