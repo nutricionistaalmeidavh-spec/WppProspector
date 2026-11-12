@@ -50,9 +50,47 @@ describe("primeiro acesso CRM", () => {
     expect(await screen.findByText("Identificar o procedimento estético de interesse")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Confirmar e continuar" }));
     await user.click(screen.getByRole("button", { name: "Continuar sem conectar" }));
-    expect(await screen.findByText("Não prometer resultados, diagnósticos ou ausência de riscos.")).toBeInTheDocument();
+    expect(await screen.findByText("Atendimento manual — recomendado para começar")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continuar com atendimento manual" }));
+    expect(await screen.findByText("Desligadas — atendimento manual")).toBeInTheDocument();
     expect(calls.calls.some(c => c.method === "PUT" && c.url.endsWith("/business/profile"))).toBe(true);
     expect(calls.calls.some(c => c.url.includes("/automation/"))).toBe(false);
+  });
+
+  it("prepara, simula e publica regras somente após aprovação expressa, sem WhatsApp real", async () => {
+    const calls = installFetchMock({
+      "GET /stats/overview": {body: overview()},
+      "GET /onboarding/state": {body: state()},
+      "GET /business/profile": {body: profile},
+      "PUT /business/profile": {body: (body: unknown) => body},
+      "PUT /onboarding/setup": {body: {ok: true}},
+      "GET /business/studio": {body: {rulesDraft: {items: [],published: true}}},
+      "PUT /business/studio/rules-draft": {body: (body: unknown) => body},
+      "POST /business/studio/simulate": {body: {
+        provider: "automation",rule: "Agendamento com avaliação",
+        reply: "Vamos verificar o agendamento após avaliação.",sent: false,charged: false,
+      }},
+      "POST /business/studio/rules-publish": {body: {published: true}},
+    });
+    renderApp(["/onboarding"]);
+    const user = userEvent.setup();
+    await screen.findByText("Configure sua empresa");
+    await user.type(screen.getByLabelText("Nome da empresa"),"Clínica QA");
+    await user.selectOptions(screen.getByLabelText("Sugestão por segmento (opcional)"),"Clínica de Estética");
+    await user.click(screen.getByRole("button",{name:"Salvar e continuar"}));
+    await user.click(await screen.findByRole("button",{name:"Confirmar e continuar"}));
+    await user.click(await screen.findByRole("button",{name:"Continuar sem conectar"}));
+    await user.click(await screen.findByRole("radio",{name:/Preparar respostas automáticas/}));
+    expect(calls.calls.some(c=>c.url.includes("/rules-draft"))).toBe(false);
+    await user.click(screen.getByRole("button",{name:"Preparar regras em rascunho"}));
+    expect(await screen.findByText("Agendamento com avaliação")).toBeInTheDocument();
+    expect(calls.calls.some(c=>c.url.endsWith("/rules-publish"))).toBe(false);
+    await user.click(screen.getByRole("button",{name:"Simular regras sugeridas"}));
+    expect(await screen.findByText(/Resposta simulada: Agendamento com avaliação/)).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox",{name:/Revisei e aprovo o envio automático/}));
+    await user.click(screen.getByRole("button",{name:"Aprovar e ativar respostas automáticas"}));
+    expect(await screen.findByText("Motor local aprovado e ativo")).toBeInTheDocument();
+    expect(calls.calls.some(c=>c.method==="POST"&&c.url.endsWith("/rules-publish"))).toBe(true);
   });
 
   it("mostra perfis setoriais adicionais mantendo a possibilidade de segmento personalizado", async () => {
