@@ -1,0 +1,60 @@
+name: CRM Stress & Limits QA
+
+# Sem endpoint público, credenciais reais, serviços pagos ou disparo de WhatsApp.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Perfil isolado de testes sintéticos
+        required: true
+        type: choice
+        default: standard
+        options:
+          - smoke
+          - standard
+          - exhaustion
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stress-qa-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stress:
+    name: "stress / ${{ matrix.profile }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # PR valida todos os perfis; execução manual seleciona somente um.
+        profile: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.profile)) || fromJSON('["smoke","standard","exhaustion"]') }}
+    env:
+      CI: "true"
+      STRESS_PROFILE: ${{ matrix.profile }}
+      NODE_OPTIONS: "--max-old-space-size=3072"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Instalar dependências travadas
+        run: npm ci
+      - name: Testes sintéticos de carga, limites, corrupção e recuperação
+        run: |
+          mkdir -p qa-reports
+          npm run test:stress -w wpp_prospector_bot_server 2>&1 | tee qa-reports/stress.log
+      - name: Publicar métricas e relatório de execução
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crm-stress-${{ env.STRESS_PROFILE }}
+          path: qa-reports/stress.log
+          retention-days: 14
+          if-no-files-found: warn
