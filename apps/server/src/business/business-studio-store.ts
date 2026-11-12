@@ -150,12 +150,14 @@ export class BusinessStudioStore {
     let session:string|null=null;
     const steps=messages.map(message=>{
       const context:RuleContext={phone:"[simulação]",message,eventType:extra.eventType??"message.received",
-        businessId:"simulation",channelId:"simulation",...extra};
+        businessId:"simulation",channelId:"simulation",
+        ...(extra.eventType==="crm.opportunity_updated"?{crmOpportunityId:"simulated-opportunity"}:{}),...extra};
       const outcome=evaluateRules(rules,context,session);
       session=outcome.nextMenuRuleId;
       return {message,source:outcome.source,rule:rules.find(rule=>rule.id===outcome.matchedRuleId)?.name??null,
         reply:outcome.decision?.replyMessages.join("\n")??"",handoff:outcome.decision?.handoffToHuman??false,
-        endConversation:outcome.decision?.endConversation??false,matchedRuleId:outcome.matchedRuleId};
+        endConversation:outcome.decision?.endConversation??false,matchedRuleId:outcome.matchedRuleId,
+        action:outcome.action};
     });
     return {steps,sessionPending:session!==null,sent:false,charged:false};
   }
