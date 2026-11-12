@@ -3,6 +3,32 @@ import { openDatabase } from "../../../shared/persistence/sqlite/open-database.t
 import { SqliteConsentStore } from "./sqlite-consent-store.ts";
 
 describe("SqliteConsentStore", () => {
+  it("preserva consentimento no pedido de cancelamento de compra e reconhece o STOP isolado", () => {
+    const db = openDatabase(":memory:");
+    try {
+      const store = new SqliteConsentStore(db);
+      const phone = "+5516999999999";
+      store.grant(phone, "opt-in-formulario");
+      expect(store.processInbound(phone, "Quero cancelar minha compra")).toBe(false);
+      expect(store.canProspect(phone)).toBe(true);
+      expect(store.processInbound(phone, "Cancelar")).toBe(true);
+      expect(store.canProspect(phone)).toBe(false);
+    } finally { db.close(); }
+  });
+
+  it("interpreta cancelamento explícito de mensagens como opt-out, mas não de compra", () => {
+    const db = openDatabase(":memory:");
+    try {
+      const store = new SqliteConsentStore(db);
+      const phone = "+5516999999999";
+      store.grant(phone, "opt-in-formulario");
+      expect(store.processInbound(phone, "Quero cancelar minha compra")).toBe(false);
+      expect(store.canProspect(phone)).toBe(true);
+      expect(store.processInbound(phone, "Cancele o envio de mensagens")).toBe(true);
+      expect(store.canProspect(phone)).toBe(false);
+    } finally { db.close(); }
+  });
+
   it("nega prospecção sem autorização registrada", () => {
     const db = openDatabase(":memory:");
     const store = new SqliteConsentStore(db);
