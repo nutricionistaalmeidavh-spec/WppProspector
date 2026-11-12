@@ -22,7 +22,7 @@ const commerceOrder=z.object({
  createdAt:z.string().datetime({offset:true}),
 }).strict();
 const commerceSync=z.object({products:z.array(catalogItem.strict()).max(2500),orders:z.array(commerceOrder).max(300)}).strict();
-const normalizeRuleText=(value:string)=>value.normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase().trim().replace(/\\s+/g," ");
+const normalizeRuleText=(value:string)=>value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim().replace(/\s+/g," ");
 const hash=(value:string)=>createHash("sha256").update(value).digest("hex");
 
 export class StudioValidationError extends Error {}
@@ -149,9 +149,9 @@ export class BusinessStudioStore {
     for (const rule of rules) {
       const needle=normalizeRuleText(rule.trigger);
       if(rule.match==="equals"?text===needle:rule.match==="starts_with"?text.startsWith(needle):text.includes(needle)) {
-        const response=rule.response.replace(/\\{(telefone|mensagem)\\}/g,(_token,key:string)=>
+        const response=rule.response.replace(/\{(telefone|mensagem)\}/g,(_token,key:string)=>
           key==="telefone"?"[simulação]":message.slice(0,500));
-        return {rule:rule.name,reply:response+(rule.action==="menu"?"\\n"+(rule.options??[]).map(option=>option.key+". "+option.label).join("\\n"):""),
+        return {rule:rule.name,reply:response+(rule.action==="menu"?"\n"+(rule.options??[]).map(option=>option.key+". "+option.label).join("\n"):""),
           handoff:rule.action==="handoff",source:"automation"};
       }
     }
