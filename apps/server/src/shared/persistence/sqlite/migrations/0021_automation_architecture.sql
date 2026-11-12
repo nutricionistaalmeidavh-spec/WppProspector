@@ -1,6 +1,7 @@
 -- P0/P1: aditivo, mantém todos os dados e regras antigos.
 ALTER TABLE automation_rules ADD COLUMN event_type TEXT NOT NULL DEFAULT 'message.received';
 ALTER TABLE automation_rules ADD COLUMN conditions_json TEXT NOT NULL DEFAULT 'null';
+ALTER TABLE automation_rules ADD COLUMN target_stage TEXT NOT NULL DEFAULT '';
 
 -- A identidade de menu passa a ser (instalação, canal, telefone).
 CREATE TABLE IF NOT EXISTS automation_menu_sessions_scoped (
