@@ -287,10 +287,10 @@ export class BusinessStudioStore {
       .toLowerCase().match(/[a-z0-9]+/g)??[])
       .filter(token=>token.length>=2&&!stop.has(token)).slice(0,8);
     if(tokens.length===0)return [];
-    const fts=tokens.map(token=>'"'+token+'*"').join(" OR ");
+    const fts=tokens.map(token=>'"'+token+'"*').join(" OR ");
     const rows=this.db.prepare(`SELECT p.id,p.source,p.name,p.sku,p.price,p.stock,p.synced_at
-      FROM business_commerce_fts f
-      JOIN business_commerce_products p ON p.rowid=f.rowid
+      FROM business_commerce_fts
+      JOIN business_commerce_products p ON p.rowid=business_commerce_fts.rowid
       WHERE business_commerce_fts MATCH ?
       ORDER BY bm25(business_commerce_fts),p.id LIMIT ?`)
       .all(fts,Math.min(Math.max(1,limit),20)) as
