@@ -121,21 +121,57 @@ export class BusinessAiStore {
 
 
   /** Registra a escolha sem trocar o provedor usado pelo atendimento real. */
+  /** O rascunho é independente do motor e da chave em uso no atendimento real. */
   stageAi(raw: unknown) {
     const value = aiInputSchema.parse(raw);
-    this.saveAi(value, false);
+    if (value.clearKey) throw new Error("Não é possível excluir uma chave ao salvar um rascunho.");
     const model = value.model || (value.provider === "compatible" ? this.getLocalModel().model : value.provider === "rules" ? "" : DEFAULT_MODELS[value.provider]);
     const endpoint = value.endpoint || (value.provider === "compatible" ? this.getLocalModel().endpoint : "");
-    this.db.prepare("INSERT INTO business_ai_pending(id,provider,model,endpoint,updated_at) VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET provider=excluded.provider,model=excluded.model,endpoint=excluded.endpoint,updated_at=excluded.updated_at")
-      .run(value.provider, model, endpoint, new Date().toISOString());
+    if (value.provider === "compatible") {
+      validateCompatibleEndpoint(endpoint);
+      if (!model) throw new Error("Informe o identificador do modelo self-hosted.");
+    }
+    if (value.provider === "anthropic" || value.provider === "openai") {
+      const existing = this.db.prepare("SELECT 1 FROM business_ai_settings WHERE provider=?").get(value.provider);
+      const draft = this.pendingSecretRow();
+      if (!value.apiKey && !existing && draft?.provider !== value.provider) {
+        throw new Error("Informe a chave do provedor antes de salvar o rascunho.");
+      }
+      if (value.apiKey && !this.encryptionKey) throw new Error("Armazenamento de credenciais indisponível.");
+    }
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      if (value.provider === "anthropic" || value.provider === "openai") {
+        if (value.apiKey) {
+          const encrypted=this.encrypt(value.apiKey);
+          this.db.prepare("INSERT INTO business_ai_pending_secrets(id,provider,key_cipher,key_iv,key_tag) VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET provider=excluded.provider,key_cipher=excluded.key_cipher,key_iv=excluded.key_iv,key_tag=excluded.key_tag")
+            .run(value.provider,encrypted.cipher,encrypted.iv,encrypted.tag);
+        } else if (this.pendingSecretRow()?.provider !== value.provider) {
+          this.db.prepare("DELETE FROM business_ai_pending_secrets WHERE id=1").run();
+        }
+      } else {
+        this.db.prepare("DELETE FROM business_ai_pending_secrets WHERE id=1").run();
+      }
+      this.db.prepare("INSERT INTO business_ai_pending(id,provider,model,endpoint,updated_at) VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET provider=excluded.provider,model=excluded.model,endpoint=excluded.endpoint,updated_at=excluded.updated_at")
+        .run(value.provider,model,endpoint,new Date().toISOString());
+      this.db.exec("COMMIT");
+    } catch(error) {this.db.exec("ROLLBACK");throw error;}
     return this.getPendingAi();
+  }
+
+  private pendingSecretRow(): (Pick<AiRow, "key_cipher"|"key_iv"|"key_tag"> & {provider:Paid})|undefined {
+    return this.db.prepare("SELECT provider,key_cipher,key_iv,key_tag FROM business_ai_pending_secrets WHERE id=1").get() as
+      (Pick<AiRow,"key_cipher"|"key_iv"|"key_tag"> & {provider:Paid})|undefined;
   }
 
   getPendingAi() {
     const row = this.db.prepare("SELECT provider,model,endpoint FROM business_ai_pending WHERE id=1").get() as {provider:AiProvider;model:string;endpoint:string}|undefined;
     const active = this.getAi();
+    const pendingSecret=this.pendingSecretRow();
     return row
-      ? { provider: row.provider, model: row.model, endpoint: row.endpoint, published: false, hasApiKey: row.provider === "anthropic" || row.provider === "openai" ? active.providers[row.provider] : false }
+      ? { provider: row.provider, model: row.model, endpoint: row.endpoint, published: false,
+          hasApiKey: row.provider === "anthropic" || row.provider === "openai" ?
+            active.providers[row.provider] || pendingSecret?.provider === row.provider : false }
       : { provider: active.provider, model: active.model, endpoint: active.endpoint ?? "", published: true, hasApiKey: active.hasApiKey };
   }
 
@@ -143,17 +179,27 @@ export class BusinessAiStore {
     const pending = this.getPendingAi();
     if (pending.provider === "rules") return {provider:"rules",model:"local-rules"};
     if (pending.provider === "compatible") return {provider:"compatible",model:pending.model,endpoint:validateCompatibleEndpoint(pending.endpoint)};
-    const row = this.db.prepare("SELECT * FROM business_ai_settings WHERE provider=?").get(pending.provider) as AiRow|undefined;
+    const stagedKey=this.pendingSecretRow();
+    const row = stagedKey?.provider === pending.provider ? stagedKey :
+      this.db.prepare("SELECT * FROM business_ai_settings WHERE provider=?").get(pending.provider) as AiRow|undefined;
     if (!row || !this.encryptionKey) throw new Error("Cadastre a chave da API antes de testar o provedor.");
-    return {provider:pending.provider,model:pending.model || row.model,apiKey:this.decrypt(row)};
+    return {provider:pending.provider,model:pending.model,apiKey:this.decrypt(row as AiRow)};
   }
 
   publishAi() {
     const pending = this.getPendingAi();
     if (pending.published) return this.getAi();
-    const result = this.saveAi({provider:pending.provider,model:pending.model,endpoint:pending.endpoint});
-    this.db.prepare("DELETE FROM business_ai_pending WHERE id=1").run();
-    return result;
+    const stagedSecret=this.pendingSecretRow();
+    const apiKey=(pending.provider==="anthropic"||pending.provider==="openai") && stagedSecret?.provider===pending.provider
+      ? this.decrypt(stagedSecret as AiRow) : "";
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.saveAi({provider:pending.provider,model:pending.model,endpoint:pending.endpoint,apiKey});
+      this.db.prepare("DELETE FROM business_ai_pending WHERE id=1").run();
+      this.db.prepare("DELETE FROM business_ai_pending_secrets WHERE id=1").run();
+      this.db.exec("COMMIT");
+    } catch(error) {this.db.exec("ROLLBACK");throw error;}
+    return this.getAi();
   }
 
   getLocalModel(): {endpoint:string;model:string} {
