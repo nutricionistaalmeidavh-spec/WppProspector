@@ -26,11 +26,17 @@ concurrency:
 
 jobs:
   stress:
+    name: "stress / ${{ matrix.profile }}"
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # PR valida todos os perfis; execução manual seleciona somente um.
+        profile: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.profile)) || fromJSON('["smoke","standard","exhaustion"]') }}
     env:
       CI: "true"
-      STRESS_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'smoke' }}
+      STRESS_PROFILE: ${{ matrix.profile }}
       NODE_OPTIONS: "--max-old-space-size=3072"
     steps:
       - uses: actions/checkout@v4
