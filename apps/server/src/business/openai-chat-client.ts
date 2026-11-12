@@ -1,5 +1,5 @@
-import type { LlmClientPort, LlmRequest, LlmResponse } from "../../conversation-engine/application/ports/llm-client.port.ts";
-import { LlmClientError } from "../../conversation-engine/application/errors.ts";
+import type { LlmClientPort, LlmRequest, LlmResponse } from "../conversation-engine/application/ports/llm-client.port.ts";
+import { LlmClientError } from "../conversation-engine/application/errors.ts";
 
 /** API oficial de chat da OpenAI, somente por escolha explícita com chave própria. */
 export class OpenAiChatClient implements LlmClientPort {
