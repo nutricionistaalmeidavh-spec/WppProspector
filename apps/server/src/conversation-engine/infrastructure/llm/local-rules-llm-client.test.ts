@@ -34,7 +34,7 @@ describe("LocalRulesLlmClient (R$ 0)", () => {
     });
     const signals=JSON.parse(result.text);
     expect(signals.temas).toContain("estoque");
-    expect(signals.temas).toContain("entregas");
+    expect(signals.temas).toContain("entrega");
     expect(result.usage.inputTokens).toBe(0);
   });
 
