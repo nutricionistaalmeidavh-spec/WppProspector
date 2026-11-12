@@ -48,6 +48,9 @@ describe("primeiro acesso CRM", () => {
     await screen.findByText("Configure sua empresa");
     await user.type(screen.getByLabelText("Nome da empresa"), "Clínica Exemplo");
     await user.type(screen.getByLabelText("Produtos e serviços"), "Limpeza de pele sob avaliação");
+    await user.click(screen.getByRole("button",{name:"Adicionar serviço"}));
+    await user.type(screen.getByLabelText("Serviço 1"),"Limpeza de pele");
+    await user.type(screen.getByLabelText("Preço 1"),"R$ 150");
     await user.selectOptions(screen.getByLabelText("Sugestão por segmento (opcional)"), "Clínica de Estética");
     expect(screen.getByLabelText("Segmento")).toHaveValue("Clínica de Estética");
     expect(screen.getByLabelText("Produtos e serviços")).toHaveValue("Limpeza de pele sob avaliação");
@@ -58,7 +61,11 @@ describe("primeiro acesso CRM", () => {
     expect(await screen.findByText("Atendimento manual — recomendado para começar")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Continuar com atendimento manual" }));
     expect(await screen.findByText("Desligadas — atendimento manual")).toBeInTheDocument();
-    expect(calls.calls.some(c => c.method === "PUT" && c.url.endsWith("/business/profile"))).toBe(true);
+    const savedProfileRequest=calls.calls.find(c=>c.method==="PUT"&&c.url.endsWith("/business/profile"));
+    expect(savedProfileRequest).toBeDefined();
+    expect((await savedProfileRequest!.json()).products).toEqual([
+      {name:"Limpeza de pele",price:"R$ 150",description:""},
+    ]);
     expect(calls.calls.some(c => c.url.includes("/automation/"))).toBe(false);
   });
 
