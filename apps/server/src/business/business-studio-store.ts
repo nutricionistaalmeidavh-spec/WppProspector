@@ -49,8 +49,7 @@ export class BusinessStudioStore {
     return this.getDraft();
   }
   history() {
-    return (this.db.prepare("SELECT revision,data_json,published_at FROM business_profile_revisions ORDER BY revision DESC LIMIT 30").all()
-      as Array<{revision:number;data_json:string;published_at:string}>)
+    return (this.db.prepare("SELECT revision,data_json,published_at FROM business_profile_revisions ORDER BY revision DESC LIMIT 30").all() as Array<{revision:number;data_json:string;published_at:string}>)
       .map(row=>({revision:row.revision,publishedAt:row.published_at,name:businessSchema.parse(JSON.parse(row.data_json)).name}));
   }
   rollback(revision: number) {
