@@ -16,7 +16,7 @@ describe("primeiro acesso CRM", () => {
       "GET /stats/overview": { body: overview() },
       "GET /onboarding/state": { body: state() },
       "GET /business/profile": { body: profile },
-      "PUT /business/profile": { body: (body) => body },
+      "PUT /business/profile": { body: (body: unknown) => body },
       "PUT /onboarding/setup": { body: { ok: true } },
     });
     renderApp(["/onboarding"]);
