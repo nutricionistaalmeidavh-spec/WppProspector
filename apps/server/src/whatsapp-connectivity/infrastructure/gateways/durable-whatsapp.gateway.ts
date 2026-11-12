@@ -19,6 +19,22 @@ export class DurableWhatsappGateway implements WhatsAppGatewayPort {
     return this.submit("text", { to: message.to, body: message.body });
   }
 
+  /** Uma tarefa agendada conserva o mesmo operationId entre falhas e reinícios. */
+  async sendTextWithOperationId(message: OutboundTextMessage, operationId: string): Promise<SentMessage> {
+    if (!/^[a-zA-Z0-9:_-]{8,120}$/.test(operationId)) throw new Error("Identificador de operação inválido.");
+    if (this.consent.isOptedOut(message.to)) throw new Error("Contato descadastrado; envio bloqueado.");
+    const payload = {to:message.to,body:message.body};
+    const existing=this.outbox.get(operationId);
+    if(existing){
+      if(existing.kind!=="text" || JSON.stringify(existing.payload)!==JSON.stringify(payload))
+        throw new Error("Identificador já associado a outra operação.");
+      if(existing.state==="sent"&&existing.providerMessageId)return {wamid:existing.providerMessageId};
+      if(existing.state==="failed")throw new Error("Operação encerrada na fila de saída.");
+    }
+    this.outbox.enqueue(operationId,"text",payload);
+    return this.deliver({operationId,kind:"text",payload,attempts:existing?.attempts??0,state:"pending"});
+  }
+
   async sendTemplateMessage(message: OutboundMessage): Promise<SentMessage> {
     if (!this.consent.canProspect(message.to)) throw new Error("Consentimento de prospecção ausente ou revogado.");
     return this.submit("template", { to: message.to, templateName: message.templateName,

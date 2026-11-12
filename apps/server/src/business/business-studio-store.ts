@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { createHash, randomBytes, timingSafeEqual, randomUUID } from "node:crypto";
 import { AutomationStore, ruleInputSchema, type RuleInput } from "../automation/automation-store.ts";
+import { evaluateRules, type RuleContext } from "../automation/rule-evaluator.ts";
 import { z } from "zod";
 import { businessSchema, type BusinessProfile, type BusinessAiStore } from "./business-ai-store.ts";
 
@@ -22,7 +23,6 @@ const commerceOrder=z.object({
  createdAt:z.string().datetime({offset:true}),
 }).strict();
 const commerceSync=z.object({products:z.array(catalogItem.strict()).max(2500),orders:z.array(commerceOrder).max(300)}).strict();
-const normalizeRuleText=(value:string)=>value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim().replace(/\s+/g," ");
 const hash=(value:string)=>createHash("sha256").update(value).digest("hex");
 
 export class StudioValidationError extends Error {}
@@ -143,21 +143,32 @@ export class BusinessStudioStore {
     this.db.prepare("DELETE FROM business_studio_validation WHERE scope='rules'").run();
     return this.getRulesDraft();
   }
-  previewRule(message:string) {
-    const rules=this.getRulesDraft().items.filter(r=>r.enabled)
-      .sort((a,b)=>(b.priority??0)-(a.priority??0));
-    const text=normalizeRuleText(message);
-    for (const rule of rules) {
-      const needle=normalizeRuleText(rule.trigger);
-      if(rule.match==="equals"?text===needle:rule.match==="starts_with"?text.startsWith(needle):text.includes(needle)) {
-        const response=rule.response.replace(/\{(telefone|mensagem)\}/g,(_token,key:string)=>
-          key==="telefone"?"[simulação]":message.slice(0,500));
-        return {rule:rule.name,reply:response+(rule.action==="menu"?"\n"+(rule.options??[]).map(option=>option.key+". "+option.label).join("\n"):""),
-          handoff:rule.action==="handoff",source:"automation"};
-      }
-    }
-    return null;
+  /** Simulador de regras puro: mesma implementação do atendimento e nenhuma escrita. */
+  simulateRuleSequence(messages:readonly string[], extra:Partial<Pick<RuleContext,
+    "eventType"|"crmStage"|"commerceStock"|"commerceSku">> = {}) {
+    const rules=this.getRulesDraft().items.map((raw,index)=>({...ruleInputSchema.parse(raw),id:raw.id??"draft-"+index}));
+    let session:string|null=null;
+    const steps=messages.map(message=>{
+      const context:RuleContext={phone:"[simulação]",message,eventType:extra.eventType??"message.received",
+        businessId:"simulation",channelId:"simulation",
+        ...(extra.eventType==="crm.opportunity_updated"?{crmOpportunityId:"simulated-opportunity"}:{}),...extra};
+      const outcome=evaluateRules(rules,context,session);
+      session=outcome.nextMenuRuleId;
+      return {message,source:outcome.source,rule:rules.find(rule=>rule.id===outcome.matchedRuleId)?.name??null,
+        reply:outcome.decision?.replyMessages.join("\n")??"",handoff:outcome.decision?.handoffToHuman??false,
+        endConversation:outcome.decision?.endConversation??false,matchedRuleId:outcome.matchedRuleId,
+        action:outcome.action};
+    });
+    return {steps,sessionPending:session!==null,sent:false,charged:false};
   }
+
+  previewRule(message:string) {
+    const sample=this.simulateRuleSequence([message]).steps[0];
+    if(!sample||sample.source==="none")return null;
+    return {rule:sample.rule??"Política obrigatória",reply:sample.reply,handoff:sample.handoff,
+      source:sample.source,matchedRuleId:sample.matchedRuleId};
+  }
+
   publishRules(){
     const draft=this.getRulesDraft();
     if(draft.published)throw new Error("Nenhuma alteração nas regras para publicar.");
@@ -225,11 +236,36 @@ export class BusinessStudioStore {
     const actual=Buffer.from(hash(token),"hex"),expected=Buffer.from(row.token_hash,"hex");
     return expected.length===actual.length&&timingSafeEqual(actual,expected);
   }
+  private stockSnapshot(source:"manual"|"shopify"|"integration"):Map<string,number|null>{
+    const rows=this.db.prepare("SELECT id,stock FROM business_commerce_products WHERE source=?")
+      .all(source) as Array<{id:string;stock:number|null}>;
+    return new Map(rows.map(item=>[item.id,item.stock]));
+  }
+
+  /** Somente após COMMIT e opt-in do catálogo. Falha de regra não desfaz sincronização. */
+  private notifyInventoryChanges(items:readonly {id:string;sku:string;stock:number|null}[],
+    previous:ReadonlyMap<string,number|null>):void {
+    if(!this.commerceStatus().enabled)return;
+    const automation=new AutomationStore(this.db);
+    for(const item of items){
+      if(previous.has(item.id)&&previous.get(item.id)===item.stock)continue;
+      try{
+        automation.evaluateEvent({phone:"",message:"",eventType:"commerce.inventory_updated",
+          businessId:"default",channelId:"internal:commerce",commerceSku:item.sku,
+          ...(item.stock===null?{}:{commerceStock:item.stock})});
+      }catch(error){
+        // Evento pós-commit deve ser isolado da importação já concluída.
+        console.error("Falha em regra de evento de estoque",error instanceof Error?error.message:"erro");
+      }
+    }
+  }
+
   syncIntegration(raw:unknown){
     const {products,orders}=commerceSync.parse(raw);
     if(new Set(products.map(p=>p.id)).size!==products.length)throw new Error("IDs de produtos duplicados.");
     if(new Set(orders.map(o=>o.id)).size!==orders.length)throw new Error("IDs de pedidos duplicados.");
     const now=new Date().toISOString();
+    const previous=this.stockSnapshot("integration");
     this.db.exec("BEGIN IMMEDIATE");
     try{
       // Snapshot dos produtos importados: substitui apenas a origem de integração.
@@ -244,6 +280,7 @@ export class BusinessStudioStore {
       this.db.prepare("UPDATE business_commerce_integrations SET last_sync_at=? WHERE id=1").run(now);
       this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
+    this.notifyInventoryChanges(products.map(item=>({...item,id:"integration:"+item.id})),previous);
     return {products:products.length,orders:orders.length,syncedAt:now};
   }
 
@@ -255,12 +292,14 @@ export class BusinessStudioStore {
       unique.add(item.id);
     }
     const now=new Date().toISOString();
+    const previous=this.stockSnapshot("manual");
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const stmt=this.db.prepare("INSERT INTO business_commerce_products(id,source,name,sku,price,stock,synced_at) VALUES(?,'manual',?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET source='manual',name=excluded.name,sku=excluded.sku,price=excluded.price,stock=excluded.stock,synced_at=excluded.synced_at");
       for(const item of items) stmt.run("manual:"+item.id,item.name,item.sku,item.price,item.stock,now);
       this.db.exec("COMMIT");
     } catch(error) {this.db.exec("ROLLBACK");throw error;}
+    this.notifyInventoryChanges(items.map(item=>({...item,id:"manual:"+item.id})),previous);
     return {imported:items.length,at:now};
   }
   getCatalog(limit=100): CommerceProduct[] {
@@ -268,6 +307,28 @@ export class BusinessStudioStore {
       .all(limit) as Array<{id:string;source:"manual"|"shopify"|"integration";name:string;sku:string;price:string;stock:number|null;synced_at:string}>;
     return rows.map(row=>({id:row.id,source:row.source,name:row.name,sku:row.sku,price:row.price,stock:row.stock,syncedAt:row.synced_at}));
   }
+  /** Busca em FTS5 apenas no catálogo publicado/ativado. Indexado por gatilhos SQLite. */
+  searchCatalog(question:string,limit=5):CommerceProduct[] {
+    if(!this.commerceStatus().enabled)return [];
+    const stop=new Set(["voce","voces","tem","quero","queria","saber","qual","quanto","custa",
+      "preco","valor","item","produto","disponivel","estoque","para","com","uma","uns","das","dos",
+      "que","pode","meu","sua","seu","esse","essa","ele","ela","por","favor"]);
+    const tokens=(question.normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .toLowerCase().match(/[a-z0-9]+/g)??[])
+      .filter(token=>token.length>=2&&!stop.has(token)).slice(0,8);
+    if(tokens.length===0)return [];
+    const fts=tokens.map(token=>'"'+token+'"*').join(" OR ");
+    const rows=this.db.prepare(`SELECT p.id,p.source,p.name,p.sku,p.price,p.stock,p.synced_at
+      FROM business_commerce_fts
+      JOIN business_commerce_products p ON p.rowid=business_commerce_fts.rowid
+      WHERE business_commerce_fts MATCH ?
+      ORDER BY bm25(business_commerce_fts),p.id LIMIT ?`)
+      .all(fts,Math.min(Math.max(1,limit),20)) as
+      Array<{id:string;source:"manual"|"shopify"|"integration";name:string;sku:string;price:string;stock:number|null;synced_at:string}>;
+    return rows.map(row=>({id:row.id,source:row.source,name:row.name,sku:row.sku,
+      price:row.price,stock:row.stock,syncedAt:row.synced_at}));
+  }
+
   getOrders() {
     return (this.db.prepare("SELECT id,order_number,financial_status,fulfillment_status,total,created_at,synced_at FROM business_commerce_orders ORDER BY created_at DESC LIMIT 50")
       .all() as Array<{id:string;order_number:string;financial_status:string;fulfillment_status:string;total:string;created_at:string;synced_at:string}>)
@@ -331,6 +392,7 @@ export class BusinessStudioStore {
     const products=productData.products.edges.flatMap(({node})=>node.variants.edges.map(({node:variant})=>({
       id:"shopify:"+variant.id,name:node.title,sku:variant.sku??"",price:variant.price,stock:variant.inventoryQuantity,
     })));
+    const previous=this.stockSnapshot("shopify");
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const insertProduct=this.db.prepare("INSERT INTO business_commerce_products(id,source,name,sku,price,stock,synced_at) VALUES(?,'shopify',?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,price=excluded.price,stock=excluded.stock,synced_at=excluded.synced_at");
@@ -340,6 +402,7 @@ export class BusinessStudioStore {
         node.totalPriceSet.shopMoney.amount+" "+node.totalPriceSet.shopMoney.currencyCode,node.createdAt,now);
       this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
+    this.notifyInventoryChanges(products,previous);
     return {products:products.length,orders:orderData.orders.edges.length,at:now,limitedTo:50};
   }
 }

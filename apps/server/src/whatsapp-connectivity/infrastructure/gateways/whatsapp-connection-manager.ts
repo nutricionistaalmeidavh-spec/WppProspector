@@ -51,6 +51,13 @@ export class WhatsAppConnectionManager implements WhatsAppGatewayPort {
     if (this.metaStore?.active()) return {provider:"meta",status:"connected",qrAvailable:false};
     return this.local?.diagnostic() ?? {provider:"meta",status:"configured",qrAvailable:false};
   }
+  /** Identidade estável do canal ativo, sem expor credenciais. */
+  activeChannelKey(): string {
+    const meta=this.metaStore?.list().find(item=>item.active);
+    if(meta)return "meta:"+meta.phoneNumberId;
+    if(this.local)return "baileys:"+this.local.getSelectedId();
+    return "meta:legacy";
+  }
   localSessions(): LocalConnection[] {
     if (!this.local) return [];
     const existing = new Map(this.local.listSessions().map(s=>[s.id,s]));

@@ -7,7 +7,7 @@ export class FollowupScheduler {
   constructor(
     private readonly store:AutomationStore,
     private readonly consent:SqliteConsentStore,
-    private readonly send:(input:{to:string;body:string})=>Promise<unknown>,
+    private readonly send:(input:{to:string;body:string;operationId:string})=>Promise<unknown>,
   ){}
   async runDue():Promise<void>{
     if(this.running)return;
@@ -20,7 +20,7 @@ export class FollowupScheduler {
           continue;
         }
         try{
-          await this.send({to:task.phone,body:task.message});
+          await this.send({to:task.phone,body:task.message,operationId:task.id});
           this.store.markSent(task.id);
         }catch(err){
           this.store.markFailure(task.id,err);

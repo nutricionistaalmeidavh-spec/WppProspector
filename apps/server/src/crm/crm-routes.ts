@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { CRM_STAGES, type CrmStore } from "./crm-store.ts";
+import { CRM_STAGES, type CrmStore, type Opportunity } from "./crm-store.ts";
 import type { ProspectLeadUseCase } from "../management/application/prospect-lead.use-case.ts";
 import {CustomerAlreadyConvertedError,ProspectingGatewayError} from "../management/application/errors.ts";
 
@@ -86,7 +86,8 @@ function responseError(err:unknown):{status:409|422;message:string}{
 }
 export const registerCrmRoutes:FastifyPluginAsync<{
   store:CrmStore;prospectLead?:ProspectLeadUseCase;prospectingEnabled?:boolean | (() => boolean);
-}>=async(app,{store,prospectLead,prospectingEnabled})=>{
+  onOpportunityUpdated?:(opportunity:Opportunity)=>void;
+}>=async(app,{store,prospectLead,prospectingEnabled,onOpportunityUpdated})=>{
   app.get("/api/crm/companies",async()=>({items:store.listCompanies()}));
   app.post("/api/crm/companies",async(req,reply)=>{
     const input=companyData.safeParse(req.body);
@@ -181,7 +182,14 @@ export const registerCrmRoutes:FastifyPluginAsync<{
     const params=idParams.safeParse(req.params),data=opportunityPatch.safeParse(req.body);
     if(!params.success||!data.success)return reply.code(422).send({error:"Dados inválidos"});
     try{
+      const before=store.getOpportunity(params.data.id);
       const value=store.updateOpportunity(params.data.id,data.data);
+      if(value&&before&&before.stage!==value.stage){
+        try{onOpportunityUpdated?.(value);}
+        catch(error){
+          console.error("Falha ao executar regra de evento CRM",error instanceof Error?error.message:"erro");
+        }
+      }
       return value?reply.send(value):reply.code(404).send({error:"Oportunidade não encontrada"});
     }catch(e){const err=responseError(e);return reply.code(err.status).send({error:err.message});}
   });

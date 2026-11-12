@@ -1,4 +1,5 @@
 import { BotDecision, type BotDecisionInput } from "../../domain/bot-decision.ts";
+import { mandatoryPolicy } from "../../../automation/rule-evaluator.ts";
 import { Conversation } from "../../domain/conversation.ts";
 import type { ReplyStrategy } from "../../domain/reply-strategy.ts";
 import { InterpretationError } from "../errors.ts";
@@ -73,6 +74,8 @@ export class GenerateReplyUseCase {
     const newMessages = pending.map((turn) => turn.text);
 
     let ruleDecision: BotDecision | null = null;
+    // Política invariável: falhas na base de automações nunca liberam opt-out/handoff para a IA.
+    const safety = newMessages.length ? mandatoryPolicy(newMessages.at(-1)!) : null;
     if (this.automation && newMessages.length > 0) {
       try {
         const match = this.automation.evaluate(leadPhone, newMessages.at(-1)!);
@@ -83,6 +86,8 @@ export class GenerateReplyUseCase {
         });
       }
     }
+
+    if(safety)ruleDecision=BotDecision.create(safety);
 
     let businessContext = "";
     try {

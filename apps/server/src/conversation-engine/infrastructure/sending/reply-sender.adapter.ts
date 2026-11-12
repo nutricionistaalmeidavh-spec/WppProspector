@@ -11,6 +11,8 @@ export interface ReplySenderAdapterDeps {
   logger: Logger;
   /** Espera antes da tentativa adicional de envio. */
   retryDelayMs?: number;
+  /** Desative com gateway durável: a outbox já executa retries persistentes. */
+  retryOnFailure?: boolean;
 }
 
 const sleep = (ms: number): Promise<void> =>
@@ -25,18 +27,26 @@ export class ReplySenderAdapter implements ReplySenderPort {
   private readonly sendTextMessage: TextMessageSender;
   private readonly logger: Logger;
   private readonly retryDelayMs: number;
+  private readonly retryOnFailure: boolean;
 
   constructor(deps: ReplySenderAdapterDeps) {
     this.sendTextMessage = deps.sendTextMessage;
     this.logger = deps.logger;
     this.retryDelayMs = deps.retryDelayMs ?? 500;
+    this.retryOnFailure = deps.retryOnFailure ?? true;
   }
 
   async send(to: string, body: string): Promise<void> {
     try {
       await this.sendTextMessage.execute({ to, body });
       return;
-    } catch {
+    } catch (error) {
+      if(!this.retryOnFailure){
+        this.logger.error("Envio entregue à outbox; tentativa local adicional desativada", {
+          to, error:error instanceof Error?error.message:String(error),
+        });
+        return;
+      }
       await sleep(this.retryDelayMs);
     }
 

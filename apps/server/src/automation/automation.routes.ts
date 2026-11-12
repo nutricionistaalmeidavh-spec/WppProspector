@@ -8,6 +8,7 @@ export const registerAutomationRoutes: FastifyPluginAsync<{
   automation: AutomationStore; consent: SqliteConsentStore; followupsEnabled: boolean | (() => boolean);
 }> = async (app,{automation,consent,followupsEnabled}) => {
   app.get("/api/automations/rules", async () => ({ items:automation.listRules() }));
+  app.get("/api/automations/executions",async()=>({items:automation.recentExecutions()}));
 
   app.post("/api/automations/rules", async(req,reply)=>{
     const parsed=ruleInputSchema.safeParse(req.body);

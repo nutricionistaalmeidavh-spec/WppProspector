@@ -113,14 +113,14 @@ function localEncryptionKey(): string {
 }
 const businessAiStore = new BusinessAiStore(database, localEncryptionKey());
 const studioContext = new BusinessStudioStore(database, businessAiStore);
-const llmClient = new ConfigurableBusinessLlm(businessAiStore,()=>studioContext.activeCatalog());
+const llmClient = new ConfigurableBusinessLlm(businessAiStore,()=>studioContext.activeCatalog(),question=>studioContext.searchCatalog(question));
 
 // O núcleo funciona sem Meta/Anthropic; ambos permanecem como opt-ins.
 const consentStore = new SqliteConsentStore(database);
 const outbox = new SqliteOutbox(database);
 const inboundJournal = new SqliteInboundJournal(database);
 const contactDirectory = new WhatsappContactsStore(database);
-const automationStore = new AutomationStore(database);
+const automationStore = new AutomationStore(database,undefined,()=>connections.activeChannelKey());
 const crmStore = new CrmStore(database);
 // O core permanece local/gratuito. Canais oficiais são um opt-in criptografado.
 const channelStore = env.WHATSAPP_CREDENTIALS_KEY
@@ -178,7 +178,7 @@ if (adminConfig) {
   );
 }
 
-const replySender = new ReplySenderAdapter({ sendTextMessage, logger });
+const replySender = new ReplySenderAdapter({ sendTextMessage, logger, retryOnFailure:false });
 
 // Conexão única do armazenamento SQL embutido. Consumida pelo `SqliteUsageRecorder`
 // (consumo de LLM) e exposta para os adapters das próximas changes (consumo de
@@ -186,7 +186,7 @@ const replySender = new ReplySenderAdapter({ sendTextMessage, logger });
 export { database };
 
 const generateReply = new GenerateReplyUseCase({
-  automation: automationStore,
+  automation: { evaluate: (phone,text) => automationStore.evaluate(phone,text,{channelId:connections.activeChannelKey()}) },
   repository: conversationRepository,
   replyStrategy,
   llmClient,
@@ -245,7 +245,8 @@ const handleMessageStatusUpdate = new HandleMessageStatusUpdateUseCase(
 );
 
 const followupScheduler = new FollowupScheduler(automationStore, consentStore,
-  async ({ to, body }) => connections.sendTextMessage(OutboundTextMessage.create({ to, body })));
+  async ({ to, body, operationId }) =>
+    gateway.sendTextWithOperationId(OutboundTextMessage.create({ to, body }),operationId));
 
 export const app = buildFastifyServer({
   webhook: env.META_WEBHOOK_VERIFY_TOKEN && env.META_APP_SECRET && (env.WHATSAPP_PROVIDER === "meta" || embeddedMetaSignup) ? {

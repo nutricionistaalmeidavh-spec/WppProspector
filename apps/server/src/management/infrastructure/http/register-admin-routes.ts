@@ -147,7 +147,14 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   });
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
   await app.register(registerBusinessSettingsRoutes, { db: deps.db, store: deps.businessAiStore ?? new BusinessAiStore(deps.db), sessionSecret: deps.config.sessionSecret, clock });
-  await app.register(registerCrmRoutes, { store: new CrmStore(deps.db),prospectLead,prospectingEnabled:prospectingAllowed });
+  await app.register(registerCrmRoutes, {
+    store:new CrmStore(deps.db),prospectLead,prospectingEnabled:prospectingAllowed,
+    onOpportunityUpdated: opportunity=>deps.automation?.evaluateEvent({
+      phone:opportunity.leadPhone,message:"",eventType:"crm.opportunity_updated",
+      businessId:"default",channelId:deps.whatsappConnections?.activeChannelKey()??"default",
+      crmStage:opportunity.stage,crmOpportunityId:opportunity.id,
+    }),
+  });
   await app.register(registerOnboardingRoutes, { db: deps.db, sessionSecret: deps.config.sessionSecret, clock });
   await app.register(registerWhatsAppContactsRoutes, {
     store: new WhatsappContactsStore(deps.db, clock), leads: deps.leads,
