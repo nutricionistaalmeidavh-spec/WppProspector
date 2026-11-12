@@ -47,7 +47,7 @@ export class LocalRulesLlmClient implements LlmClientPort {
       const matches = (candidate: string) => {
         const words = normalize(candidate).split(/[^a-z0-9]+/).filter(Boolean);
         return words.length > 0 && words.every(word => [...terms].some(term => nearToken(word,term))) &&
-          (words.length > 1 || words[0].length >= 5);
+          (words.length > 1 || (words[0]?.length ?? 0) >= 5);
       };
       const commerceProduct=this.catalog().find(p=>matches(p.name)||(p.sku&&terms.has(normalize(p.sku))));
       const product = commerceProduct ?? company?.products.find(p => matches(p.name));
