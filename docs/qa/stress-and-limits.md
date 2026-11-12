@@ -12,10 +12,10 @@ STRESS_PROFILE=exhaustion npm run test:stress -w wpp_prospector_bot_server
 ```
 
 - **smoke**: em toda PR para `main` — limite superior de 2.000 tarefas de fila, 700 mensagens recebidas (com 20% de reentregas), 2.000 avaliações do motor, 1.000 jobs/journal, 120 oportunidades, 300 conversas paginadas e 60 acessos concorrentes.
-- **standard**: manual em GitHub Actions — 12.000 tarefas, 3.000 mensagens, 12.000 avaliações, 5.000 jobs, 500 oportunidades, 1.000 conversas e 250 acessos.
-- **exhaustion**: manual em GitHub Actions — 60.000 tarefas, 10.000 mensagens, 60.000 avaliações, 25.000 jobs, 2.500 oportunidades, 3.000 conversas e 900 acessos.
+- **standard**: em toda PR para `main` e disponível manualmente — 12.000 tarefas, 3.000 mensagens, 12.000 avaliações, 5.000 jobs, 500 oportunidades, 1.000 conversas e 250 acessos.
+- **exhaustion**: em toda PR para `main` e disponível manualmente — 60.000 tarefas, 10.000 mensagens, 60.000 avaliações, 25.000 jobs, 2.500 oportunidades, 3.000 conversas e 900 acessos.
 
-Arquivo do workflow: `.github/workflows/stress-qa.yml`. Em **Actions → CRM Stress & Limits QA → Run workflow**, selecione o perfil. É possível executar localmente sem GitHub. A execução tem limite de 45 minutos e heap máximo de 3 GiB no runner.
+Arquivo do workflow: `.github/workflows/stress-qa.yml`. Todas as PRs executam os três perfis em matriz. Após a inclusão do workflow na branch padrão, em **Actions → CRM Stress & Limits QA → Run workflow**, pode-se repetir um único perfil. Também é possível executar localmente sem GitHub. A execução tem limite de 45 minutos e heap máximo de 3 GiB no runner.
 
 ## O que é garantido pelos testes
 
