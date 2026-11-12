@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { BotDecisionInput } from "../conversation-engine/domain/bot-decision.ts";
+import type { Stage } from "../crm/crm-store.ts";
 
 /**
  * Política obrigatória > menus em andamento > regras publicadas > interpretador.
@@ -27,7 +28,8 @@ export interface EngineRule {
   priority: number;
   match: "equals" | "contains" | "starts_with";
   trigger: string;
-  action: "reply" | "menu" | "handoff";
+  action: "reply" | "menu" | "handoff" | "crm_set_stage";
+  targetStage?: Stage;
   response: string;
   options: readonly { key: string; label: string; response: string; handoff: boolean }[];
   eventType?: AutomationEventType;
@@ -41,6 +43,7 @@ export interface RuleContext {
   businessId: string;
   channelId: string;
   crmStage?: string;
+  crmOpportunityId?: string;
   commerceStock?: number;
   commerceSku?: string;
 }
@@ -49,6 +52,7 @@ export interface RuleEvaluation {
   matchedRuleId: string | null;
   nextMenuRuleId: string | null;
   source: "policy" | "menu" | "rule" | "none";
+  action: {kind:"crm_set_stage";opportunityId:string;stage:Stage} | null;
 }
 
 export function normalizeRuleText(value: string): string {
@@ -127,10 +131,10 @@ function matches(rule: EngineRule, context: RuleContext): boolean {
 }
 
 export function evaluateRules(rules: readonly EngineRule[], context: RuleContext, activeMenuRuleId: string|null): RuleEvaluation {
-  const empty: RuleEvaluation = {decision:null,matchedRuleId:null,nextMenuRuleId:null,source:"none"};
+  const empty: RuleEvaluation = {decision:null,matchedRuleId:null,nextMenuRuleId:null,source:"none",action:null};
   if (context.eventType === "message.received") {
     const forced = mandatoryPolicy(context.message);
-    if (forced) return {decision:forced,matchedRuleId:null,nextMenuRuleId:null,source:"policy"};
+    if (forced) return {decision:forced,matchedRuleId:null,nextMenuRuleId:null,source:"policy",action:null};
   }
 
   if (activeMenuRuleId && context.eventType === "message.received") {
@@ -138,11 +142,11 @@ export function evaluateRules(rules: readonly EngineRule[], context: RuleContext
     if (active) {
       const selected = active.options.find(item => normalizeRuleText(item.key) === normalizeRuleText(context.message));
       if (selected) return {decision:decision([renderRuleTemplate(selected.response, context)],selected.handoff),
-        matchedRuleId:active.id,nextMenuRuleId:null,source:"menu"};
+        matchedRuleId:active.id,nextMenuRuleId:null,source:"menu",action:null};
       if (normalizeRuleText(context.message) !== normalizeRuleText(active.trigger)) {
         return {decision:decision(["Opção não reconhecida.\n" + renderRuleTemplate(active.response, context) + "\n" +
           active.options.map(item=>item.key+". "+item.label).join("\n")]),
-          matchedRuleId:active.id,nextMenuRuleId:active.id,source:"menu"};
+          matchedRuleId:active.id,nextMenuRuleId:active.id,source:"menu",action:null};
       }
     }
   }
@@ -150,10 +154,15 @@ export function evaluateRules(rules: readonly EngineRule[], context: RuleContext
   const ordered = [...rules].sort((a,b)=>b.priority-a.priority||a.id.localeCompare(b.id));
   const rule = ordered.find(item=>matches(item,context));
   if (!rule) return empty;
+  if(rule.action==="crm_set_stage"){
+    if(!context.crmOpportunityId||!rule.targetStage)return empty;
+    return {decision:decision([]),matchedRuleId:rule.id,nextMenuRuleId:null,source:"rule",action:null,
+      action:{kind:"crm_set_stage",opportunityId:context.crmOpportunityId,stage:rule.targetStage}};
+  }
   const response = renderRuleTemplate(rule.response,context);
   if (rule.action === "menu") {
     return {decision:decision([response+"\n"+rule.options.map(item=>item.key+". "+item.label).join("\n")]),
-      matchedRuleId:rule.id,nextMenuRuleId:rule.id,source:"rule"};
+      matchedRuleId:rule.id,nextMenuRuleId:rule.id,source:"rule",action:null};
   }
   return {decision:decision([response],rule.action==="handoff"),
     matchedRuleId:rule.id,nextMenuRuleId:null,source:"rule"};
