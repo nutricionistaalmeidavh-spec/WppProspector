@@ -36,7 +36,7 @@ describe("BaileysSessionManager", () => {
     const received = vi.fn();
     const manager = new BaileysSessionManager("./auth", "principal,secundaria", 5, id => ({
       ...fake(),
-      start: vi.fn(async inbound => { callbacks.set(id, inbound); }),
+      start: vi.fn(async (inbound: Parameters<ManagedSession["start"]>[0]) => { callbacks.set(id, inbound); }),
     }));
     await manager.start({execute:()=>{}, contacts:received});
     const batch=[{phone:"+5516999999999",displayName:"Contato QA"}];
