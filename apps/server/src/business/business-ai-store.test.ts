@@ -89,4 +89,28 @@ describe("perfil de loja e motor de regras genérico", () => {
       expect(store.getAi().hasApiKey).toBe(false);
     } finally { db.close(); }
   });
+
+  it("isola dados e preços de instalações distintas sem reiniciar o atendimento", async () => {
+    const alphaDb = openDatabase(":memory:");
+    const betaDb = openDatabase(":memory:");
+    try {
+      const alpha = new BusinessAiStore(alphaDb);
+      const beta = new BusinessAiStore(betaDb);
+      alpha.saveBusiness({ ...alpha.getBusiness(), name:"Loja Alpha",
+        products:[{name:"Camisa Azul",description:"",price:"R$ 40"}] });
+      beta.saveBusiness({ ...beta.getBusiness(), name:"Loja Beta",
+        products:[{name:"Tênis Verde",description:"",price:"R$ 90"}] });
+      const alphaBot=new LocalRulesLlmClient(()=>alpha.getBusiness());
+      const betaBot=new LocalRulesLlmClient(()=>beta.getBusiness());
+      const ask=async(bot:LocalRulesLlmClient,message:string)=>
+        (JSON.parse((await bot.generate(request(message))).text) as {replyMessages:string[]}).replyMessages.join(" ");
+      expect(await ask(alphaBot,"Preço da Camisa Azul")).toContain("R$ 40");
+      expect(await ask(betaBot,"Preço da Camisa Azul")).not.toContain("R$ 40");
+      expect(await ask(betaBot,"Preço do Tênis Verde")).toContain("R$ 90");
+      alpha.saveBusiness({...alpha.getBusiness(),products:[{name:"Camisa Azul",description:"",price:"R$ 55"}]});
+      expect(await ask(alphaBot,"Preço da Camisa Azul")).toContain("R$ 55");
+      expect(await ask(betaBot,"Preço da Camisa Azul")).not.toContain("R$ 55");
+    } finally { alphaDb.close();betaDb.close(); }
+  });
+
 });
