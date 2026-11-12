@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Conversation } from "../../conversation-engine/domain/conversation.ts";
 import { LeadSerialQueue } from "../../conversation-engine/infrastructure/inbound/lead-serial-queue.ts";
+import { BusinessAiStore } from "../../business/business-ai-store.ts";
 import { openDatabase } from "../../shared/persistence/sqlite/open-database.ts";
 import type { FirstContactTemplateConfig } from "../application/first-contact-template.ts";
 import type { Logger } from "../application/ports/logger.port.ts";
@@ -94,6 +95,7 @@ export async function buildAdminTestApp(
     queue,
     audit,
     logger: silentLogger,
+    businessAiStore: new BusinessAiStore(db, "f".repeat(64)),
     clock: () => now.value,
   });
   await app.ready();
