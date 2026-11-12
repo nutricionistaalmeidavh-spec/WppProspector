@@ -33,7 +33,7 @@ export class LocalRulesLlmClient implements LlmClientPort {
       };
       const commerceProduct=this.catalog().find(p=>matches(p.name)||(p.sku&&terms.has(normalize(p.sku))));
       const product = commerceProduct ?? company?.products.find(p => matches(p.name));
-      const asksStock=/\\b(estoque|disponivel|disponibilidade|tem|quantidade)\\b/.test(normalized);
+      const asksStock=/\b(estoque|disponivel|disponibilidade|tem|quantidade)\b/.test(normalized);
       const knownFaq = company?.faq.find(x => matches(x.question));
       let answer = "";
       let unknown = false;
