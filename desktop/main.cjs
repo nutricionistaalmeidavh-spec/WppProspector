@@ -7,6 +7,7 @@ const { spawn } = require('node:child_process');
 const { createServer } = require('node:net');
 require('node:dns').setDefaultResultOrder('ipv4first');
 const { licenseStatus } = require('./license.cjs');
+const { createBootDiagnostics, verifyBundledRuntime, formatBackendFailure } = require('./boot-support.cjs');
 
 let windowRef;
 let backend;
@@ -73,17 +74,20 @@ function setMenu() {
     { role: 'quit', label: 'Sair' },
   ] }]));
 }
-async function waitUntilReady(origin, child, timeoutMs = 45_000) {
+async function waitUntilReady(origin, child, state, diagnostics, timeoutMs = 45_000) {
   const stop = Date.now() + timeoutMs;
   while (Date.now() < stop) {
-    if (child.exitCode !== null) throw new Error('O servidor encerrou durante a inicialização.');
+    if (state.error) throw new Error(formatBackendFailure({ error: state.error }, diagnostics.path));
+    if (state.exited || child.exitCode !== null) {
+      throw new Error(formatBackendFailure({ code: state.code ?? child.exitCode, signal: state.signal }, diagnostics.path));
+    }
     try {
       const response = await fetch(origin + '/admin/', { signal: AbortSignal.timeout(1500) });
       if (response.ok) return;
     } catch { /* servidor ainda inicializando */ }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
-  throw new Error('O servidor não iniciou dentro do tempo esperado.');
+  throw new Error('O servidor local não respondeu em 45 segundos. Diagnóstico: ' + diagnostics.path);
 }
 async function authenticate(origin, access) {
   // O login é feito pelo processo principal, sem colocar a senha no JavaScript do painel.
@@ -113,9 +117,16 @@ async function startCRM() {
     const serverDir = join(root, 'apps', 'server');
     const nodeExecutable = app.isPackaged ? join(root, 'node.exe') : process.execPath;
     const main = join(serverDir, 'dist', 'main.js');
-    if (!existsSync(nodeExecutable) || !existsSync(main)) throw new Error('Arquivos do CRM ausentes no pacote.');
     mkdirSync(dataRoot(), { recursive: true });
     credential = localCredentials();
+    const diagnostics = createBootDiagnostics(app.getPath('userData'), [credential.access, credential.session]);
+    try {
+      if (app.isPackaged) verifyBundledRuntime(root);
+      else if (!existsSync(main)) throw new Error('Compile o servidor antes de executar a versão desktop.');
+    } catch (error) {
+      diagnostics.append('desktop', error.message);
+      throw new Error(formatBackendFailure({ error }, diagnostics.path));
+    }
     const port = await getPort();
     const origin = `http://localhost:${port}`;
     const env = {
@@ -131,11 +142,25 @@ async function startCRM() {
       META_ACCESS_TOKEN: '', META_APP_SECRET: '', META_PHONE_NUMBER_ID: '',
       META_WABA_ID: '', META_WEBHOOK_VERIFY_TOKEN: '', ANTHROPIC_API_KEY: '',
     };
+    // Flags Node herdadas do sistema podem impedir o subprocesso de abrir no PC do cliente.
+    delete env.NODE_OPTIONS;
+    delete env.NODE_PATH;
+    delete env.ELECTRON_RUN_AS_NODE;
     backend = spawn(nodeExecutable, [main], { cwd: serverDir, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    backend.stdout.on('data', buf => console.log('[CRM]', buf.toString().slice(0, 500)));
-    backend.stderr.on('data', buf => console.error('[CRM]', buf.toString().slice(0, 500)));
-    backend.on('error', e => console.error('Servidor:', e.message));
-    await waitUntilReady(origin, backend);
+    const state = { exited: false, code: null, signal: null, error: null };
+    backend.stdout.on('data', buf => { if (booting) diagnostics.append('stdout', buf); });
+    backend.stderr.on('data', buf => { if (booting) diagnostics.append('stderr', buf); });
+    backend.on('error', error => {
+      state.error = error;
+      diagnostics.append('desktop', 'Falha ao executar servidor: ' + error.message);
+    });
+    backend.on('exit', (code, signal) => {
+      state.exited = true;
+      state.code = code;
+      state.signal = signal;
+      if (booting) diagnostics.append('desktop', 'Servidor encerrado: code=' + code + ', signal=' + signal);
+    });
+    await waitUntilReady(origin, backend, state, diagnostics);
     try { await authenticate(origin, credential.access); }
     catch (error) {
       dialog.showMessageBoxSync(windowRef, { type: 'warning', title: 'Login local',

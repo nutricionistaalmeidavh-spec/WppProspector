@@ -10,6 +10,22 @@ describe("loadConversationEngineEnv", () => {
     expect(env.DATABASE_PATH).toBe("./data/app.db");
   });
 
+  it("ignora ANTHROPIC_API_KEY vazia no modo local sem serviço pago", () => {
+    const env = loadConversationEngineEnv({
+      LLM_PROVIDER: "rules",
+      ANTHROPIC_API_KEY: "",
+      ANTHROPIC_WORKSPACE_ID: "",
+    });
+    expect(env.LLM_PROVIDER).toBe("rules");
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.ANTHROPIC_WORKSPACE_ID).toBeUndefined();
+    expect(env.LLM_MODEL).toBe("local-rules");
+  });
+
+  it("continua exigindo chave válida quando Anthropic for habilitada explicitamente", () => {
+    expect(() => loadConversationEngineEnv({ LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "" })).toThrow(/ANTHROPIC_API_KEY/);
+  });
+
   it("suporta Anthropic somente como escolha explícita com chave", () => {
     expect(() => loadConversationEngineEnv({ LLM_PROVIDER: "anthropic" })).toThrow(/ANTHROPIC_API_KEY/);
     const env = loadConversationEngineEnv({ LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-test", LLM_MODEL: "claude-sonnet-5" });

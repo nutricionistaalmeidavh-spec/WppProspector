@@ -2,8 +2,9 @@ import { z } from "zod";
 
 const envSchema = z.object({
   LLM_PROVIDER: z.enum(["rules", "anthropic"]).default("rules"),
-  ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  ANTHROPIC_WORKSPACE_ID: z.string().min(1).optional(),
+  // Variáveis vazias de integrações opcionais não devem impedir o core local.
+  ANTHROPIC_API_KEY: z.preprocess(v => v === "" ? undefined : v, z.string().min(1).optional()),
+  ANTHROPIC_WORKSPACE_ID: z.preprocess(v => v === "" ? undefined : v, z.string().min(1).optional()),
   LLM_MODEL: z.string().min(1).optional(),
   EXTRACTION_LLM_MODEL: z.string().min(1).optional(),
   CONVERSATION_BATCH_WINDOW_MS: z.coerce.number().int().positive().default(8000),
