@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ChevronLeft, ChevronRight, CircleHelp, MessageSquare, ShieldCheck, Sparkles } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, CircleHelp, MessageSquare } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { apiFetch } from "@/api/client";
 import { useSession } from "@/auth/session";
