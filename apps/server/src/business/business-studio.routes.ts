@@ -81,8 +81,8 @@ export const registerBusinessStudioRoutes:FastifyPluginAsync<Deps> = async(app,d
     }catch(error) {
       // Não retornar corpos HTTP, tokens, URLs privadas ou respostas do provedor ao browser.
       const raw=error instanceof Error?error.message:"";
-      const reason=/\\b(401|403)\\b/.test(raw)?"auth":/\\b404\\b/.test(raw)?"model":
-        /\\b429\\b/.test(raw)?"rate_limit":"connection";
+      const reason=/\b(401|403)\b/.test(raw)?"auth":/\b404\b/.test(raw)?"model":
+        /\b429\b/.test(raw)?"rate_limit":"connection";
       return reply.code(422).send({ok:false,provider:engine.provider,reason,
         error:reason==="auth"?"Credenciais rejeitadas pelo provedor.":
           reason==="model"?"Modelo informado não encontrado.":
