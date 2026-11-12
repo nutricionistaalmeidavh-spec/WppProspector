@@ -49,4 +49,16 @@ describe("Motor de decisões P0-P2", () => {
     expect(second.decision?.replyMessages).toEqual(["Suporte"]);
     expect(second.nextMenuRuleId).toBeNull();
   });
+  it("emite ação tipada CRM somente para oportunidade identificada",()=>{
+    const rule: EngineRule={...base,eventType:"crm.opportunity_updated",action:"crm_set_stage",
+      targetStage:"proposal",trigger:"",response:"",conditions:{match:"all",conditions:[
+        {field:"crm.stage",op:"equals",value:"qualified"},
+      ]}};
+    const context={...input(""),eventType:"crm.opportunity_updated" as const,
+      crmOpportunityId:"op-001",crmStage:"qualified"};
+    const outcome=evaluateRules([rule],context,null);
+    expect(outcome.action).toEqual({kind:"crm_set_stage",opportunityId:"op-001",stage:"proposal"});
+    expect(outcome.decision?.replyMessages).toEqual([]);
+    expect(evaluateRules([rule],{...context,crmOpportunityId:undefined},null).action).toBeNull();
+  });
 });
