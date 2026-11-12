@@ -7,8 +7,13 @@ async function fixture() {
   const test = await buildAdminTestApp();
   opened.push(test);
   const cookie = await test.login();
-  const request = (method: "GET" | "PUT" | "POST", path: string, payload?: unknown) =>
-    test.app.inject({ method, url: "/admin/api" + path, headers: { cookie }, ...(payload === undefined ? {} : { payload }) });
+  const request = (method: "GET" | "PUT" | "POST", path: string, payload?: Record<string, unknown>) =>
+    test.app.inject({
+      method,
+      url: "/admin/api" + path,
+      headers: { cookie, ...(payload === undefined ? {} : { "content-type": "application/json" }) },
+      ...(payload === undefined ? {} : { payload: JSON.stringify(payload) }),
+    });
   return { test, request };
 }
 
