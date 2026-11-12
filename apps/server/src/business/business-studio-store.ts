@@ -102,6 +102,7 @@ export class BusinessStudioStore {
       // Requer a chave comercial ainda cadastrada; histórico nunca armazena tokens.
       this.ai.saveAi(value);
       this.db.prepare("DELETE FROM business_ai_pending WHERE id=1").run();
+      this.db.prepare("DELETE FROM business_ai_pending_secrets WHERE id=1").run();
       this.recordEngineRevision();
       return this.ai.getAi();
     }
