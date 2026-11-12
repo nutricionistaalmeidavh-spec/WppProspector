@@ -7,12 +7,13 @@ import type { BusinessAiStore } from "./business-ai-store.ts";
 export interface BusinessSettingsRouteDeps {
   store: BusinessAiStore;
   sessionSecret: string;
+  clock?: () => Date;
 }
 export const registerBusinessSettingsRoutes: FastifyPluginAsync<BusinessSettingsRouteDeps> = async (app, deps) => {
   // Equipe e agentes não podem nem visualizar chaves configuradas ou alterar políticas.
   const adminOnly: preHandlerAsyncHookHandler = async (request, reply) => {
     const cookie = request.cookies?.[SESSION_COOKIE_NAME] ?? "";
-    const status = verify(cookie, new Date(), deps.sessionSecret);
+    const status = verify(cookie, (deps.clock ?? (() => new Date()))(), deps.sessionSecret);
     if (status.status !== "ok") return reply.code(401).send({error:"unauthorized"});
     if (status.payload.userId) return reply.code(403).send({error:"forbidden"});
   };
