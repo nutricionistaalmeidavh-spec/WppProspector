@@ -11,9 +11,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Match = "equals" | "contains" | "starts_with";
 type Action = "reply" | "menu" | "handoff";
+type EventType = "message.received"|"crm.opportunity_updated"|"commerce.inventory_updated";
+type ConditionField = "message.text"|"crm.stage"|"commerce.stock"|"commerce.sku"|"event.type";
+type ConditionOp = "equals"|"contains"|"starts_with"|"gte"|"lte";
+type Condition = {field:ConditionField;op:ConditionOp;value:string};
+type Conditions = {match:"all"|"any";conditions:Condition[]};
 type MenuOption = {key:string;label:string;response:string;handoff:boolean};
 type Rule = {
-  id:string;name:string;match:Match;trigger:string;action:Action;response:string;
+  id:string;name:string;match:Match;trigger:string;action:Action;response:string;eventType?:EventType;conditions?:Conditions;
   enabled:boolean;priority:number;options:MenuOption[];createdAt:string;updatedAt:string;
 };
 type Draft = Omit<Rule, "id" | "createdAt" | "updatedAt">;
@@ -21,7 +26,7 @@ type Followup = {
   id:string;phone:string;message:string;dueAt:string;
   state:"pending"|"sending"|"sent"|"cancelled"|"failed";attempts:number;
 };
-const emptyDraft:Draft = {name:"",match:"contains",trigger:"",action:"reply",response:"",enabled:true,priority:0,options:[]};
+const emptyDraft:Draft = {name:"",match:"contains",trigger:"",eventType:"message.received",action:"reply",response:"",enabled:true,priority:0,options:[]};
 
 export function parseMenuOptions(value:string):MenuOption[]{
   return value.split("\n").map(line=>line.trim()).filter(Boolean).map(line=>{
@@ -52,6 +57,8 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
   const [phone,setPhone]=useState("");
   const [followupMessage,setFollowupMessage]=useState("");
   const [dueLocal,setDueLocal]=useState("");
+  const [ruleSample,setRuleSample]=useState("Quero saber o preço");
+  const [ruleSimulation,setRuleSimulation]=useState<{steps:Array<{rule:string|null;source:string;reply:string;handoff:boolean;endConversation:boolean}>;sent:boolean;charged:boolean}|null>(null);
 
   async function refresh(){
     const [r,f]=await Promise.all([
@@ -76,7 +83,7 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
 
   function startEdit(rule:Rule){
     setEditId(rule.id);
-    setDraft({name:rule.name,match:rule.match,trigger:rule.trigger,action:rule.action,response:rule.response,enabled:rule.enabled,priority:rule.priority,options:rule.options});
+    setDraft({name:rule.name,match:rule.match,trigger:rule.trigger,eventType:rule.eventType??"message.received",conditions:rule.conditions,action:rule.action,response:rule.response,enabled:rule.enabled,priority:rule.priority,options:rule.options});
     setOptionsRaw(optionsText(rule.options));
     setError("");setMessage("");
   }
@@ -86,6 +93,21 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
     try{await fn();await refresh();}
     catch(e){setError(e instanceof Error?e.message:"Erro ao salvar");}
     finally{setBusy(false);}
+  }
+  async function simulateRule(){
+    setBusy(true);setError("");setRuleSimulation(null);
+    try{
+      const result=await apiFetch<{steps:Array<{rule:string|null;source:string;reply:string;handoff:boolean;endConversation:boolean}>;sent:boolean;charged:boolean}>(
+        "/business/studio/rules/simulate",
+        {method:"POST",body:{messages:ruleSample.split("\\n").map(v=>v.trim()).filter(Boolean),
+          eventType:draft.eventType??"message.received"}});
+      setRuleSimulation(result);
+    }catch(e){setError(e instanceof Error?e.message:"Erro na simulação");}
+    finally{setBusy(false);}
+  }
+  function updateCondition(index:number,patch:Partial<Condition>){
+    setDraft(current=>({...current,conditions:{match:current.conditions?.match??"all",
+      conditions:(current.conditions?.conditions??[]).map((item,i)=>i===index?{...item,...patch}:item)}}));
   }
   async function saveRule(){
     const options=draft.action==="menu"?parseMenuOptions(optionsRaw):[];
@@ -116,13 +138,67 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
             <div className="space-y-1.5"><Label htmlFor="r-match">Condição</Label><select id="r-match" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={draft.match} onChange={e=>setDraft({...draft,match:e.target.value as Match})}>{(Object.keys(matchNames) as Match[]).map(k=><option key={k} value={k}>{matchNames[k]}</option>)}</select></div>
             <div className="space-y-1.5"><Label htmlFor="r-action">Ação</Label><select id="r-action" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={draft.action} onChange={e=>setDraft({...draft,action:e.target.value as Action})}><option value="reply">Responder</option><option value="menu">Menu de opções</option><option value="handoff">Transferir para humano</option></select></div>
           </div>
-          <div className="space-y-1.5"><Label htmlFor="r-trigger">Texto disparador</Label><Input id="r-trigger" value={draft.trigger} onChange={e=>setDraft({...draft,trigger:e.target.value})} placeholder="ex.: orçamento" /></div>
+          <div className="space-y-1.5"><Label htmlFor="r-event">Evento</Label>
+            <select id="r-event" className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={draft.eventType??"message.received"}
+              onChange={e=>setDraft({...draft,eventType:e.target.value as EventType,action:draft.action==="menu"&&e.target.value!=="message.received"?"reply":draft.action})}>
+              <option value="message.received">Mensagem recebida</option>
+              <option value="crm.opportunity_updated">Oportunidade atualizada</option>
+              <option value="commerce.inventory_updated">Estoque sincronizado</option>
+            </select>
+            {draft.eventType!=="message.received"?<p className="text-xs text-muted-foreground">Eventos internos são avaliados sem disparar WhatsApp automaticamente.</p>:null}
+          </div>
+          <div className="space-y-1.5"><Label htmlFor="r-trigger">Texto disparador {draft.eventType!=="message.received"?"(opcional)":""}</Label><Input id="r-trigger" value={draft.trigger} onChange={e=>setDraft({...draft,trigger:e.target.value})} placeholder="ex.: orçamento" /></div>
+          <div className="space-y-2 rounded-lg border p-3">
+            <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox"
+              checked={Boolean(draft.conditions)} onChange={e=>setDraft({...draft,conditions:e.target.checked?
+                {match:"all",conditions:[{field:"message.text",op:"contains",value:""}]}:undefined})}/>Condições avançadas</label>
+            {draft.conditions?<div className="space-y-3">
+              <label className="flex items-center gap-2 text-xs">Combinação
+                <select aria-label="Combinação das condições" className="rounded border bg-background p-1"
+                  value={draft.conditions.match} onChange={e=>setDraft({...draft,conditions:{...draft.conditions!,match:e.target.value as "all"|"any"}})}>
+                  <option value="all">Todas (E)</option><option value="any">Qualquer uma (OU)</option>
+                </select>
+              </label>
+              {draft.conditions.conditions.map((condition,index)=><div key={index} className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+                <select aria-label={"Campo "+(index+1)} className="h-9 rounded border bg-background px-2 text-xs" value={condition.field}
+                  onChange={e=>updateCondition(index,{field:e.target.value as ConditionField})}>
+                  <option value="message.text">Mensagem</option><option value="crm.stage">Etapa CRM</option>
+                  <option value="commerce.stock">Saldo estoque</option><option value="commerce.sku">SKU</option>
+                  <option value="event.type">Tipo evento</option>
+                </select>
+                <select aria-label={"Operador "+(index+1)} className="h-9 rounded border bg-background px-2 text-xs" value={condition.op}
+                  onChange={e=>updateCondition(index,{op:e.target.value as ConditionOp})}>
+                  <option value="equals">Igual</option><option value="contains">Contém</option>
+                  <option value="starts_with">Começa com</option><option value="gte">Maior/igual</option><option value="lte">Menor/igual</option>
+                </select>
+                <Input aria-label={"Valor "+(index+1)} value={condition.value} maxLength={160}
+                  onChange={e=>updateCondition(index,{value:e.target.value})} placeholder="Valor"/>
+                <Button size="icon" variant="ghost" aria-label={"Excluir condição "+(index+1)}
+                  onClick={()=>setDraft({...draft,conditions:draft.conditions!.conditions.length>1?
+                    {...draft.conditions!,conditions:draft.conditions!.conditions.filter((_,i)=>i!==index)}:undefined})}><Trash2 className="h-4 w-4"/></Button>
+              </div>)}
+              <Button size="sm" variant="outline" disabled={draft.conditions.conditions.length>=12}
+                onClick={()=>setDraft({...draft,conditions:{...draft.conditions!,conditions:[...draft.conditions!.conditions,
+                  {field:"message.text",op:"contains",value:""}]}})}>Adicionar condição</Button>
+            </div>:null}
+          </div>
           <div className="space-y-1.5"><Label htmlFor="r-response">Resposta</Label><p className="text-xs text-muted-foreground">Variáveis disponíveis: <code>{"{telefone}"}</code> e <code>{"{mensagem}"}</code>.</p><textarea id="r-response" rows={4} maxLength={4096} className="w-full rounded-md border bg-background p-3 text-sm" value={draft.response} onChange={e=>setDraft({...draft,response:e.target.value})} placeholder="Olá! Como podemos ajudar?" /></div>
           {draft.action==="menu"?<div className="space-y-1.5"><Label htmlFor="r-options">Opções do menu</Label><textarea id="r-options" rows={4} className="w-full rounded-md border bg-background p-3 font-mono text-xs" value={optionsRaw} onChange={e=>setOptionsRaw(e.target.value)} placeholder={"1|Suporte|Vou chamar o suporte|sim\n2|Vendas|Vamos falar de preços|não"} /><p className="text-xs text-muted-foreground">Uma opção por linha: tecla | título | resposta | sim/não para transferência.</p></div>:null}
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.enabled} onChange={e=>setDraft({...draft,enabled:e.target.checked})}/>Ativa</label>
             <label className="flex items-center gap-2 text-sm">Prioridade <Input aria-label="Prioridade" type="number" className="w-20" min={-1000} max={1000} value={draft.priority} onChange={e=>setDraft({...draft,priority:Number(e.target.value)})}/></label>
           </div>
+          {embedded?<div className="space-y-2 rounded-lg border p-3">
+            <Label htmlFor="rule-sample">Testar regras publicadas/rascunho (uma mensagem por linha)</Label>
+            <textarea id="rule-sample" rows={2} className="w-full rounded-md border bg-background p-2 text-sm"
+              value={ruleSample} onChange={e=>setRuleSample(e.target.value)}/>
+            <Button variant="outline" disabled={busy||!ruleSample.trim()} onClick={()=>void simulateRule()}>Simular sem enviar</Button>
+            {ruleSimulation?<div role="status" className="space-y-1 text-xs">
+              {ruleSimulation.steps.map((step,i)=><p key={i}><strong>{step.rule??step.source}:</strong> {step.reply||"(sem resposta)"}{step.handoff?" · encaminhamento humano":""}</p>)}
+              <p className="text-muted-foreground">Sem mensagens enviadas nem consumo de API.</p>
+            </div>:null}
+          </div>:null}
           <div className="flex flex-wrap gap-2"><Button disabled={busy} onClick={()=>void perform(saveRule)}><Plus className="h-4 w-4"/>{editId?"Salvar alterações":"Criar regra"}</Button>{editId?<Button variant="outline" onClick={clearForm}>Cancelar edição</Button>:null}</div>
         </CardContent>
       </Card>
@@ -131,7 +207,7 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
         <CardContent className="space-y-3">
           {rules.length===0?<p className="text-sm text-muted-foreground">Nenhuma regra cadastrada. A resposta padrão continuará funcionando.</p>:null}
           {rules.map(rule=><div key={rule.id} className="rounded-lg border p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{rule.name}</strong><span className="text-xs text-muted-foreground">{rule.enabled?"Ativa":"Inativa"} · prioridade {rule.priority}</span></div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{rule.name}</strong><span className="text-xs text-muted-foreground">{rule.enabled?"Ativa":"Inativa"} · prioridade {rule.priority} · {rule.eventType??"message.received"}</span></div>
             <p className="mt-1 text-xs text-muted-foreground">{matchNames[rule.match]}: “{rule.trigger}” · {rule.action==="menu"?"Menu":rule.action==="handoff"?"Transferência":"Resposta"}</p>
             <p className="mt-2 whitespace-pre-wrap text-sm">{rule.response}</p>
             <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={()=>startEdit(rule)}>Editar</Button>
