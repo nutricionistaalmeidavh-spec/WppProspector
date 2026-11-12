@@ -1,8 +1,25 @@
 import type { LlmClientPort, LlmRequest, LlmResponse } from "../../application/ports/llm-client.port.ts";
 import type { BusinessProfile } from "../../../business/business-ai-store.ts";
+import { localExtraction } from "../knowledge/signal-extraction.ts";
 
 const normalize = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const fallback = "Vou confirmar essa informação com nossa equipe para não passar dados incorretos.";
+
+/** Distância de edição de um caractere, sem dependências ou modelos externos. */
+function nearToken(a:string,b:string):boolean {
+  if(a===b)return true;
+  if(Math.min(a.length,b.length)<4||Math.abs(a.length-b.length)>1)return false;
+  let i=0,j=0,edits=0;
+  while(i<a.length&&j<b.length){
+    if(a[i]===b[j]){i++;j++;continue;}
+    if(++edits>1)return false;
+    if(a.length>b.length)i++;
+    else if(b.length>a.length)j++;
+    else {i++;j++;}
+  }
+  return edits+(a.length-i)+(b.length-j)<=1;
+}
+
 
 /** Respostas determinísticas usando SOMENTE o cadastro canônico desta instalação. */
 export type LocalCatalogItem = {name:string;sku:string;price:string;stock:number|null;syncedAt:string};
@@ -19,7 +36,7 @@ export class LocalRulesLlmClient implements LlmClientPort {
 
     let value: unknown;
     if (isExtraction) {
-      value = { temas: [], dores: [], modulosProvaveis: [] };
+      value = localExtraction([user], {});
     } else {
       const company = this.business();
       const optedOut = /\b(pare|parem|parar|cancele|cancelar|remova|remover|descadastrar|nao quero mais|nao me envie|nao tenho interesse|sair)\b/.test(normalized);
@@ -29,7 +46,8 @@ export class LocalRulesLlmClient implements LlmClientPort {
       const terms = new Set(normalized.split(/[^a-z0-9]+/).filter(Boolean));
       const matches = (candidate: string) => {
         const words = normalize(candidate).split(/[^a-z0-9]+/).filter(Boolean);
-        return words.length > 0 && words.every(word => terms.has(word));
+        return words.length > 0 && words.every(word => [...terms].some(term => nearToken(word,term))) &&
+          (words.length > 1 || words[0].length >= 5);
       };
       const commerceProduct=this.catalog().find(p=>matches(p.name)||(p.sku&&terms.has(normalize(p.sku))));
       const product = commerceProduct ?? company?.products.find(p => matches(p.name));
