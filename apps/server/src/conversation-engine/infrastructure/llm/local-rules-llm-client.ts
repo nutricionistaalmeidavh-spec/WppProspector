@@ -23,8 +23,13 @@ export class LocalRulesLlmClient implements LlmClientPort {
       const human = /\b(humano|atendente|pessoa|falar com alguem)\b/.test(normalized);
       const interested = /\b(quero contratar|tenho interesse|comprar|contratar)\b/.test(normalized);
       const questionPrice = /\b(preco|quanto|custa|valor|catalogo|produto)\b/.test(normalized);
-      const product = company?.products.find(p => normalize(p.name).split(/\s+/).filter(part => part.length >= 3).every(part => normalized.includes(part)));
-      const knownFaq = company?.faq.find(x => normalize(x.question).split(/\s+/).filter(s => s.length > 3).every(s => normalized.includes(s)));
+      const terms = new Set(normalized.split(/[^a-z0-9]+/).filter(Boolean));
+      const matches = (candidate: string) => {
+        const words = normalize(candidate).split(/[^a-z0-9]+/).filter(Boolean);
+        return words.length > 0 && words.every(word => terms.has(word));
+      };
+      const product = company?.products.find(p => matches(p.name));
+      const knownFaq = company?.faq.find(x => matches(x.question));
       let answer = "";
       let unknown = false;
       if (knownFaq) answer = knownFaq.answer;
