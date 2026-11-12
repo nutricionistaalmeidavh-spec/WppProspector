@@ -3,6 +3,9 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+// Conteúdo comercial legado é mantido apenas nas fontes históricas/testes.
+// Nunca é copiado para o runtime distribuído (Docker, desktop ou self-hosted).
+const LEGACY = new Set(['reply-strategy.prompt.md', 'sales-knowledge.md', 'pricing.md']);
 
 // tsc compila TS; prompts, conhecimento e migrations precisam acompanhar o JS.
 export function copyServerAssets(source, target) {
@@ -12,7 +15,7 @@ export function copyServerAssets(source, target) {
     const to = join(target, entry.name);
     if (entry.isDirectory()) {
       copied += copyServerAssets(from, to);
-    } else if (['.md', '.sql'].includes(extname(entry.name))) {
+    } else if (['.md', '.sql'].includes(extname(entry.name)) && !LEGACY.has(entry.name)) {
       mkdirSync(dirname(to), { recursive: true });
       copyFileSync(from, to);
       copied++;

@@ -27,9 +27,7 @@ test('identifica dependências e manifesto ausentes ANTES de iniciar o backend',
     const required = [
       'node.exe', 'apps/server/dist/main.js', 'apps/server/package.json',
       'apps/panel/dist/index.html',
-      'apps/server/dist/conversation-engine/domain/reply-strategy.prompt.md',
-      'apps/server/dist/conversation-engine/infrastructure/knowledge/sales-knowledge.md',
-      'apps/server/dist/conversation-engine/infrastructure/knowledge/pricing.md',
+      'apps/server/dist/conversation-engine/domain/merchant-reply.prompt.md',
     ];
     for (const relative of required) {
       const file = join(dir, relative);

@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ConversationRepositoryPort } from "./conversation-engine/application/ports/conversation-repository.port.ts";
@@ -7,15 +8,14 @@ import { loadConversationEngineEnv } from "./conversation-engine/infrastructure/
 import { PendingInboundSweeper } from "./conversation-engine/infrastructure/boot/pending-inbound-sweeper.ts";
 import { InboundBatchCoordinator } from "./conversation-engine/infrastructure/inbound/inbound-batch-coordinator.ts";
 import { LeadSerialQueue } from "./conversation-engine/infrastructure/inbound/lead-serial-queue.ts";
-import { loadKnowledge } from "./conversation-engine/infrastructure/knowledge/knowledge-loader.ts";
-import { LexicalRetrievalBusinessContext } from "./conversation-engine/infrastructure/knowledge/lexical-retrieval.business-context.ts";
-import { AnthropicLlmClient } from "./conversation-engine/infrastructure/llm/anthropic-llm-client.ts";
-import { LocalRulesLlmClient } from "./conversation-engine/infrastructure/llm/local-rules-llm-client.ts";
 import { FileConversationRepository } from "./conversation-engine/infrastructure/persistence/file-conversation-repository.ts";
 import { NoopUsageRecorder } from "./conversation-engine/infrastructure/persistence/noop-usage-recorder.ts";
 import { SqliteUsageRecorder } from "./conversation-engine/infrastructure/persistence/sqlite-usage-recorder.ts";
 import { ReplySenderAdapter } from "./conversation-engine/infrastructure/sending/reply-sender.adapter.ts";
 import { ReplyStrategy } from "./conversation-engine/domain/reply-strategy.ts";
+import { BusinessAiStore } from "./business/business-ai-store.ts";
+import { MerchantBusinessContext } from "./business/merchant-business-context.ts";
+import { ConfigurableBusinessLlm } from "./business/configurable-business-llm.ts";
 import { loadManagementEnv, resolveAdminConfig } from "./management/infrastructure/config/env.ts";
 import { ConversationIndexProjection } from "./management/infrastructure/persistence/conversation-index-projection.ts";
 import { IndexingConversationRepository } from "./management/infrastructure/persistence/indexing-conversation-repository.ts";
@@ -57,7 +57,7 @@ const logger = new ConsoleLogger();
 const promptText = readFileSync(
   join(
     dirname(fileURLToPath(import.meta.url)),
-    "conversation-engine/domain/reply-strategy.prompt.md",
+    "conversation-engine/domain/merchant-reply.prompt.md",
   ),
   "utf8",
 );
@@ -67,27 +67,8 @@ const replyStrategy = new ReplyStrategy({
   model: conversationEnv.LLM_MODEL,
   historyTurns: conversationEnv.CONVERSATION_HISTORY_TURNS,
 });
-const llmClient = conversationEnv.LLM_PROVIDER === "anthropic"
-  ? new AnthropicLlmClient({ apiKey: conversationEnv.ANTHROPIC_API_KEY!, workspaceId: conversationEnv.ANTHROPIC_WORKSPACE_ID })
-  : new LocalRulesLlmClient();
-
-// Base de conhecimento comercial: preparada no boot. Fail-fast — se a base não
-// construir (arquivo ausente, `.md` malformado, metadado faltando, zero
-// trechos), o processo não sobe.
-let knowledge: ReturnType<typeof loadKnowledge>;
-try {
-  knowledge = loadKnowledge(conversationEnv.KNOWLEDGE_DIR);
-  logger.info("Base de conhecimento comercial preparada", {
-    chunks: knowledge.chunks.length,
-    pinned: knowledge.chunks.filter((c) => c.pinned).length,
-  });
-} catch (error) {
-  console.error(
-    "Falha ao preparar a base de conhecimento comercial — abortando a inicialização",
-    error,
-  );
-  process.exit(1);
-}
+// O contexto comercial é recuperado do cadastro SQLite da instalação.
+// Nenhuma empresa ou preço de demonstração entra no runtime.
 
 // Armazenamento SQL embutido (node:sqlite): preparado no boot, antes de montar
 // os use-cases e antes do `app.listen`. Fail-fast — se abrir o banco ou aplicar
@@ -106,6 +87,30 @@ try {
   );
   process.exit(1);
 }
+
+// Cria chave de criptografia local apenas quando não houve override explícito.
+// Ela acompanha o backup da instalação; nunca entra no pacote de distribuição.
+function localEncryptionKey(): string {
+  if (process.env.AI_CREDENTIALS_KEY) return process.env.AI_CREDENTIALS_KEY;
+  const folder = dirname(conversationEnv.DATABASE_PATH);
+  mkdirSync(folder, { recursive: true });
+  const file = join(folder, ".ai-credentials-key");
+  try {
+    const existing = readFileSync(file, "utf8").trim();
+    if (/^[a-f0-9]{64}$/i.test(existing)) return existing;
+    throw new Error("Arquivo de chave de IA inválido; restaure o backup antes de ativar IA.");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const key = randomBytes(32).toString("hex");
+    try { writeFileSync(file, key, { flag: "wx", mode: 0o600 }); return key; }
+    catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === "EEXIST") return readFileSync(file, "utf8").trim();
+      throw cause;
+    }
+  }
+}
+const businessAiStore = new BusinessAiStore(database, localEncryptionKey());
+const llmClient = new ConfigurableBusinessLlm(businessAiStore);
 
 // O núcleo funciona sem Meta/Anthropic; ambos permanecem como opt-ins.
 const consentStore = new SqliteConsentStore(database);
@@ -138,16 +143,7 @@ const usageRecorder = conversationEnv.LLM_USAGE_TRACKING_ENABLED
   ? new SqliteUsageRecorder(database, logger)
   : new NoopUsageRecorder();
 
-const businessContextProvider = new LexicalRetrievalBusinessContext({
-  llmClient,
-  index: knowledge.index,
-  pinnedContext: knowledge.pinnedContext,
-  extractionModel: conversationEnv.EXTRACTION_LLM_MODEL,
-  topK: conversationEnv.RETRIEVAL_TOP_K,
-  minScore: conversationEnv.RETRIEVAL_MIN_SCORE,
-  usageRecorder,
-  logger,
-});
+const businessContextProvider = new MerchantBusinessContext(businessAiStore);
 
 // API de gestão (/admin): quando ligada, o repositório de conversas é embrulhado
 // por um decorator que mantém a projeção de leitura (`conversation_index`) em
@@ -270,6 +266,7 @@ export const app = buildFastifyServer({
         audit: new SqliteAdminActionAudit(database, logger),
         consent: consentStore,
         automation: automationStore,
+        businessAiStore,
         followupsEnabled: () => !connections.isMetaActive(),
         prospectingEnabled: () => connections.isMetaActive(),
         diagnostics: () => connections.diagnostics(),

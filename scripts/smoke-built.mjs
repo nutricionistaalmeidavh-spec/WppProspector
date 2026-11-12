@@ -22,13 +22,13 @@ let output = '';
 const env = {
   ...process.env,
   WHATSAPP_PROVIDER: 'meta',
-  LLM_PROVIDER: 'anthropic',
+  LLM_PROVIDER: 'rules',
   META_ACCESS_TOKEN: 'qa-no-external-calls',
   META_APP_SECRET: 'qa-no-external-calls',
   META_PHONE_NUMBER_ID: 'qa-no-external-calls',
   META_WABA_ID: 'qa-no-external-calls',
   META_WEBHOOK_VERIFY_TOKEN: 'qa-no-external-calls',
-  ANTHROPIC_API_KEY: 'qa-no-external-calls',
+  ANTHROPIC_API_KEY: '',
   ADMIN_ENABLED: 'true',
   ADMIN_ACCESS_SECRET: 'qa-local-only',
   ADMIN_SESSION_SECRET: 'qa-local-session-only',
@@ -88,7 +88,17 @@ try {
     ...options,
     headers: { ...headers, ...(options.body ? { 'content-type': 'application/json' } : {}) },
   });
-  assert.equal((await api('/capabilities')).status, 200);
+  // Uma instalação nova não pode carregar dados comerciais da ArtiSys.
+  const newBusiness=await (await api('/business/profile')).json();
+  assert.equal(newBusiness.name, '');
+  assert.deepEqual(newBusiness.products, []);
+  const savedBusiness={...newBusiness,name:'Loja QA Fictícia',segment:'papelaria',
+    products:[{name:'Caderno Azul',price:'R$ 12,00',description:'80 folhas'}]};
+  assert.equal((await api('/business/profile',{method:'PUT',body:JSON.stringify(savedBusiness)})).status,200);
+  assert.equal((await (await api('/business/profile')).json()).products[0].price,'R$ 12,00');
+  assert.equal((await (await api('/business/ai')).json()).provider,'rules');
+  assert.equal((await (await api('/business/ai')).json()).hasApiKey,false);
+    assert.equal((await api('/capabilities')).status, 200);
   assert.equal((await api('/conversations')).status, 200);
   assert.equal((await api('/stats/overview')).status, 200);
   assert.equal((await api('/stats/consumption?from=2026-01-01&to=2026-12-31&groupBy=day')).status, 200);
@@ -101,7 +111,8 @@ try {
   assert.equal((await api('/not-a-route')).status, 404);
   await stop();
   await start();
-  assert.equal((await (await api('/leads')).json()).items[0].displayName, 'Teste de integração');
+  assert.equal((await (await api('/business/profile')).json()).name,'Loja QA Fictícia');
+    assert.equal((await (await api('/leads')).json()).items[0].displayName, 'Teste de integração');
   const logout = await api('/session', { method: 'DELETE' });
   assert.equal(logout.status, 204);
   assert.match(logout.headers.get('set-cookie'), /Expires=/i);

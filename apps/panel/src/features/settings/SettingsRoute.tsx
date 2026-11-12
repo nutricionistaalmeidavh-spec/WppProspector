@@ -20,7 +20,10 @@ export function SettingsRoute() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Sistema" title="Configurações" description="Estado das integrações que a interface consegue consumir neste deploy." />
-      <Link to="/settings/whatsapp" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Gerenciar conexões WhatsApp</Link>
+      <div className="flex flex-wrap gap-2">
+        <Link to="/settings/whatsapp" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Gerenciar conexões WhatsApp</Link>
+        <Link to="/settings/business-ai" className="inline-flex w-fit rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted">Motor de Regras / Inteligência Artificial</Link>
+      </div>
       <Card className="max-w-3xl shadow-sm">
         <CardHeader><CardTitle className="text-base">Capabilities</CardTitle></CardHeader>
         <CardContent className="divide-y p-0">

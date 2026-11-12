@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Bot,
+  BrainCircuit,
   Workflow,
   Building2,
   CircleDollarSign,
@@ -75,6 +76,7 @@ export function getNavigationGroups(crm: CrmModules, role:"admin"|"manager"|"age
       items: compact([
         { to: "/settings", label: "Configurações", icon: Settings },
         enabled(role==="admin", { to: "/settings/whatsapp", label: "Conexões WhatsApp", icon: Smartphone }),
+        enabled(role==="admin", { to: "/settings/business-ai", label: "Motor de Regras / IA", icon: BrainCircuit }),
       ]),
     },
   ].filter((group) => group.items.length > 0);

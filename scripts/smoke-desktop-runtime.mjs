@@ -12,7 +12,7 @@ const executable = join(root, 'node.exe');
 const serverDir = join(root, 'apps/server');
 const entrypoint = join(serverDir, 'dist/main.js');
 const panel = join(root, 'apps/panel/dist');
-const knowledge = join(serverDir, 'dist/conversation-engine/infrastructure/knowledge');
+const genericPrompt = join(serverDir, 'dist/conversation-engine/domain/merchant-reply.prompt.md');
 const dir = mkdtempSync(join(tmpdir(), 'wpp-runtime-qa-'));
 const messages = [];
 let child;
@@ -30,8 +30,12 @@ async function reservePort() {
 try {
   if (process.platform !== 'win32') throw new Error('O smoke do pacote usa o executável Windows e deve rodar no windows-latest.');
   for (const path of [executable, entrypoint, join(serverDir, 'package.json'), join(panel, 'index.html'),
-    join(knowledge, 'sales-knowledge.md'), join(knowledge, 'pricing.md')]) {
+    genericPrompt]) {
     if (!existsSync(path)) throw new Error('Artefato não contém: ' + path);
+  }
+  for (const legacy of ['sales-knowledge.md','pricing.md']) {
+    if (existsSync(join(serverDir, 'dist/conversation-engine/infrastructure/knowledge', legacy)))
+      throw new Error('Conteúdo comercial legado vazou para o instalador: ' + legacy);
   }
   const port = await reservePort();
   const access = randomBytes(32).toString('hex');
@@ -43,7 +47,7 @@ try {
     PROSPECTING_TEMPLATE_NAME: 'abertura_lead_obras',
     WHATSAPP_PROVIDER: 'baileys', LLM_PROVIDER: 'rules',
     DATABASE_PATH: join(dir, 'crm.db'), CONVERSATIONS_DIR: join(dir, 'conversations'),
-    BAILEYS_AUTH_DIR: join(dir, 'baileys-auth'), KNOWLEDGE_DIR: knowledge,
+    BAILEYS_AUTH_DIR: join(dir, 'baileys-auth'),
     ADMIN_WEB_DIST_DIR: panel,
     META_ACCESS_TOKEN: '', META_APP_SECRET: '', META_PHONE_NUMBER_ID: '',
     META_WABA_ID: '', META_WEBHOOK_VERIFY_TOKEN: '', ANTHROPIC_API_KEY: '',
