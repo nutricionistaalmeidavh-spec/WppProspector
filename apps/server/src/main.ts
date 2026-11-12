@@ -176,7 +176,7 @@ if (adminConfig) {
   );
 }
 
-const replySender = new ReplySenderAdapter({ sendTextMessage, logger });
+const replySender = new ReplySenderAdapter({ sendTextMessage, logger, retryOnFailure:false });
 
 // Conexão única do armazenamento SQL embutido. Consumida pelo `SqliteUsageRecorder`
 // (consumo de LLM) e exposta para os adapters das próximas changes (consumo de
@@ -184,7 +184,7 @@ const replySender = new ReplySenderAdapter({ sendTextMessage, logger });
 export { database };
 
 const generateReply = new GenerateReplyUseCase({
-  automation: automationStore,
+  automation: { evaluate: (phone,text) => automationStore.evaluate(phone,text,{channelId:connections.activeChannelKey()}) },
   repository: conversationRepository,
   replyStrategy,
   llmClient,
@@ -243,7 +243,8 @@ const handleMessageStatusUpdate = new HandleMessageStatusUpdateUseCase(
 );
 
 const followupScheduler = new FollowupScheduler(automationStore, consentStore,
-  async ({ to, body }) => connections.sendTextMessage(OutboundTextMessage.create({ to, body })));
+  async ({ to, body, operationId }) =>
+    gateway.sendTextWithOperationId(OutboundTextMessage.create({ to, body }),operationId));
 
 export const app = buildFastifyServer({
   webhook: env.META_WEBHOOK_VERIFY_TOKEN && env.META_APP_SECRET && (env.WHATSAPP_PROVIDER === "meta" || embeddedMetaSignup) ? {
