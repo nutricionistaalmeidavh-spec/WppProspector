@@ -145,7 +145,7 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
     crm: { opportunities: true, companies: true, campaigns: true },
   });
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
-  await app.register(registerBusinessSettingsRoutes, { store: deps.businessAiStore ?? new BusinessAiStore(deps.db), sessionSecret: deps.config.sessionSecret, clock });
+  await app.register(registerBusinessSettingsRoutes, { db: deps.db, store: deps.businessAiStore ?? new BusinessAiStore(deps.db), sessionSecret: deps.config.sessionSecret, clock });
   await app.register(registerCrmRoutes, { store: new CrmStore(deps.db),prospectLead,prospectingEnabled:prospectingAllowed });
   await app.register(registerWhatsAppContactsRoutes, {
     store: new WhatsappContactsStore(deps.db, clock), leads: deps.leads,
