@@ -58,12 +58,17 @@ describe("primeiro acesso CRM", () => {
   });
 
   it("prepara, simula e publica regras somente após aprovação expressa, sem WhatsApp real", async () => {
+    let currentState = state();
     const calls = installFetchMock({
       "GET /stats/overview": {body: overview()},
-      "GET /onboarding/state": {body: state()},
+      "GET /onboarding/state": {body: () => currentState},
       "GET /business/profile": {body: profile},
       "PUT /business/profile": {body: (body: unknown) => body},
-      "PUT /onboarding/setup": {body: {ok: true}},
+      "PUT /onboarding/setup": {body: (body: unknown) => {
+        const payload=body as {step:keyof ReturnType<typeof state>["setup"];status:"completed"|"skipped"};
+        currentState={...currentState,setup:{...currentState.setup,[payload.step]:payload.status}};
+        return {ok:true};
+      }},
       "GET /business/studio": {body: {rulesDraft: {items: [],published: true}}},
       "PUT /business/studio/rules-draft": {body: (body: unknown) => body},
       "POST /business/studio/simulate": {body: {
