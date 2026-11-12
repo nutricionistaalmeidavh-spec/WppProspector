@@ -40,12 +40,14 @@ export function ConversationCrmPanel({ leadPhone }: { leadPhone: string }) {
   const [success, setSuccess] = useState("");
 
   const lead = context.data?.lead;
+  const synced = directory.data?.items.find(c => c.phone === phone);
   useEffect(() => {
+    if (editing) return;
     setFields({
-      displayName: lead?.displayName ?? "", company: lead?.company ?? "",
+      displayName: lead?.displayName || synced?.displayName || "", company: lead?.company ?? "",
       city: lead?.city ?? "", segment: lead?.segment ?? "", notes: lead?.notes ?? "",
     });
-  }, [lead?.displayName, lead?.company, lead?.city, lead?.segment, lead?.notes, phone]);
+  }, [editing, lead?.displayName, lead?.company, lead?.city, lead?.segment, lead?.notes, synced?.displayName, phone]);
 
   const refresh = async () => {
     await Promise.all([
@@ -54,10 +56,10 @@ export function ConversationCrmPanel({ leadPhone }: { leadPhone: string }) {
     ]);
   };
   const action = async (task: () => Promise<unknown>, message: string) => {
-    if (busy) return;
+    if (busy) return false;
     setBusy(true); setError(""); setSuccess("");
-    try { await task(); await refresh(); setSuccess(message); }
-    catch (err) { setError(wrap(err)); }
+    try { await task(); await refresh(); setSuccess(message); return true; }
+    catch (err) { setError(wrap(err)); return false; }
     finally { setBusy(false); }
   };
 
@@ -65,7 +67,6 @@ export function ConversationCrmPanel({ leadPhone }: { leadPhone: string }) {
   if (context.isError || !context.data?.exists) return null;
   const related = context.data.opportunities;
   const available = (all.data?.items ?? []).filter(opp => !related.some(item => item.id === opp.id));
-  const synced = directory.data?.items.find(c => c.phone === phone);
   const name = lead?.displayName?.trim();
   const incomplete = !name;
 
@@ -82,7 +83,7 @@ export function ConversationCrmPanel({ leadPhone }: { leadPhone: string }) {
     {editing ? <form className="grid gap-2 sm:grid-cols-2" onSubmit={e => {
       e.preventDefault();
       void action(() => apiFetch("/crm/conversations/" + encodeURIComponent(phone) + "/contact",
-        { method: "PATCH", body: fields }), "Contato atualizado.").then(() => setEditing(false));
+        { method: "PATCH", body: fields }), "Contato atualizado.").then(ok => { if (ok) setEditing(false); });
     }}>
       {(["displayName","company","city","segment"] as const).map(key =>
         <label key={key} className="text-xs">{({displayName:"Nome",company:"Empresa",city:"Cidade",segment:"Segmento"} as const)[key]}
@@ -121,7 +122,7 @@ export function ConversationCrmPanel({ leadPhone }: { leadPhone: string }) {
         </select>
         <Button size="sm" variant="outline" disabled={busy||!linkedId} onClick={()=>void action(
           ()=>apiFetch("/crm/conversations/"+encodeURIComponent(phone)+"/opportunities/"+linkedId,{method:"POST"}),
-          "Oportunidade vinculada.").then(()=>setLinkedId(""))}>Vincular</Button>
+          "Oportunidade vinculada.").then(ok=>{if(ok)setLinkedId("");})}>Vincular</Button>
       </div>:null}
     </div>
     <form className="space-y-2 border-t pt-3" onSubmit={event=>{
@@ -134,7 +135,7 @@ export function ConversationCrmPanel({ leadPhone }: { leadPhone: string }) {
         }
         if(!selected) throw new Error("Selecione ou cadastre uma empresa.");
         await apiFetch("/crm/opportunities",{method:"POST",body:{title:oppTitle.trim(),companyId:selected,leadPhone:phone}});
-      },"Nova oportunidade criada no Kanban.").then(()=>{setOppTitle("");setNewCompany("");});
+      },"Nova oportunidade criada no Kanban.").then(ok=>{if(ok){setOppTitle("");setNewCompany("");}});
     }}>
       <h3 className="text-xs font-semibold">Criar oportunidade a partir desta conversa</h3>
       <Input aria-label="Título da oportunidade" required minLength={2} maxLength={180}
