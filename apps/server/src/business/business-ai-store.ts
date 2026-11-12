@@ -168,7 +168,7 @@ export class BusinessAiStore {
   }
   saveShopifyConnection(raw:unknown) {
     const value=z.object({
-      domain:z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{0,62}\\.myshopify\\.com$/),
+      domain:z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{0,62}\.myshopify\.com$/),
       token:z.string().min(1).max(4096),
     }).parse(raw);
     if (!this.encryptionKey) throw new Error("Armazenamento de credenciais indisponível.");
