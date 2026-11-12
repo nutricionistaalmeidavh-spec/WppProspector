@@ -95,7 +95,7 @@ export const registerBusinessStudioRoutes:FastifyPluginAsync<Deps> = async(app,d
     const {message,allowExternal}=previewSchema.parse(request.body);
     const match=studio.previewRule(message);
     if(match){
-      if(!studio.getRulesDraft().published)studio.markValidated("rules");
+      if(match.source!=="policy"&&!studio.getRulesDraft().published)studio.markValidated("rules");
       return {provider:"automation",rule:match.rule,reply:match.reply,handoff:match.handoff,sent:false,charged:false,
         validation:studio.getValidation()};
     }
@@ -126,6 +126,20 @@ export const registerBusinessStudioRoutes:FastifyPluginAsync<Deps> = async(app,d
     return {provider:engine.provider,reply:answer.text,handoff:false,sent:false,
       charged:engine.provider!=="compatible",usage:{input:answer.usage.inputTokens,output:answer.usage.outputTokens},
       validation:studio.getValidation()};
+  },reply));
+
+  app.post("/api/business/studio/rules/simulate",{preHandler:adminOnly},async(request,reply)=>safe(()=>{
+    const {messages,eventType,crmStage,commerceStock,commerceSku}=z.object({
+      messages:z.array(z.string().trim().min(1).max(2000)).min(1).max(15),
+      eventType:z.enum(["message.received","crm.opportunity_updated","commerce.inventory_updated"]).default("message.received"),
+      crmStage:z.string().trim().max(100).optional(),
+      commerceStock:z.number().int().min(0).optional(),
+      commerceSku:z.string().trim().max(120).optional(),
+    }).strict().parse(request.body);
+    return studio.simulateRuleSequence(messages,{eventType,
+      ...(crmStage!==undefined?{crmStage}:{}),
+      ...(commerceStock!==undefined?{commerceStock}:{}),
+      ...(commerceSku!==undefined?{commerceSku}:{})});
   },reply));
 
   app.get("/api/business/studio/catalog",{preHandler:adminOnly},async()=>({
