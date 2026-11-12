@@ -3,6 +3,15 @@ import { openDatabase } from "../shared/persistence/sqlite/open-database.ts";
 import { AutomationStore, renderAutomationTemplate } from "./automation-store.ts";
 
 describe("AutomationStore", () => {
+  it("ativa regra por palavras inteiras sem disparar em substrings",()=>{
+    const db=openDatabase(":memory:");
+    const store=new AutomationStore(db);
+    store.saveRule({name:"Preço",match:"words",trigger:"preço",response:"Tabela",action:"reply",enabled:true,priority:0,options:[]});
+    expect(store.evaluate("+5516999999999","Qual é o PREÇO?")?.replyMessages).toEqual(["Tabela"]);
+    expect(store.evaluate("+5516999999999","Tenho apreço pela loja")).toBeNull();
+    db.close();
+  });
+
   it("renderiza somente variáveis locais permitidas",()=>{
     expect(renderAutomationTemplate("De {telefone}: {mensagem}; {segredo}", "+5516999999999", "Oi"))
       .toBe("De +5516999999999: Oi; {segredo}");
