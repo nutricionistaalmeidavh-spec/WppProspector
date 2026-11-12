@@ -28,6 +28,13 @@ describe("onboarding self-hosted do CRM", () => {
     expect(test.db.prepare("SELECT COUNT(*) AS n FROM leads").get()).toMatchObject({ n: 0 });
   });
 
+  it("não permite habilitar respostas automáticas sem regras aprovadas e publicadas",async()=>{
+    const {request}=await fixture();
+    const attempted=await request("PUT","/onboarding/setup",{step:"rules",status:"completed"});
+    expect(attempted.statusCode).toBe(409);
+    expect((await request("GET","/onboarding/state")).json().setup.rules).not.toBe("completed");
+  });
+
   it("não conclui perfil vazio; mantém progresso e permite pular integrações opcionais", async () => {
     const { request } = await fixture();
     expect((await request("PUT", "/onboarding/setup", { step: "business", status: "completed" })).statusCode).toBe(409);
