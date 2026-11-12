@@ -81,7 +81,7 @@ export class BusinessAiStore {
   getActiveAi(): {provider: AiProvider; model: string; apiKey?: string; endpoint?: string} {
     const { provider, model } = this.getAi();
     if (provider === "rules") return { provider, model: "local-rules" };
-    if (provider === "compatible") return { provider, model: ai.model, endpoint: this.getLocalModel().endpoint };
+    if (provider === "compatible") return { provider, model, endpoint: this.getLocalModel().endpoint };
     const row = this.db.prepare("SELECT * FROM business_ai_settings WHERE provider=?").get(provider) as AiRow|undefined;
     if (!row) throw new Error("Configure a chave de API de " + provider + " em Configurações.");
     if (!this.encryptionKey) throw new Error("Chave mestra de IA não configurada neste servidor.");
