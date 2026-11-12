@@ -1,6 +1,8 @@
 import {describe,expect,it} from "vitest";
 import {buildAdminTestApp} from "../management/test-support/admin-test-app.ts";
 import {BusinessAiStore} from "./business-ai-store.ts";
+import {BusinessStudioStore} from "./business-studio-store.ts";
+import {LocalRulesLlmClient} from "../conversation-engine/infrastructure/llm/local-rules-llm-client.ts";
 
 const business={
   name:"Oficina Teste",segment:"serviços",description:"Manutenção",openingHours:"8h às 17h",
@@ -92,6 +94,24 @@ describe("Roadmap obrigatório P0–P2",()=>{
       const restored=await c.app.inject({method:"POST",url:"/admin/api/business/studio/rollback",headers,payload:{revision:baseline!.revision,kind:"rules"}});
       expect(restored.statusCode).toBe(200);
       expect((await c.app.inject({method:"GET",url:"/admin/api/automations/rules",headers})).json().items).toHaveLength(0);
+    }finally{await c.close();}
+  });
+  it("motor gratuito consulta estoque sincronizado somente após publicação da fonte",async()=>{
+    const c=await buildAdminTestApp();
+    try{
+      const ai=new BusinessAiStore(c.db,"f".repeat(64));
+      const commerce=new BusinessStudioStore(c.db,ai);
+      commerce.rotateIntegrationToken();
+      commerce.syncIntegration({products:[{id:"peca-A",name:"Peça A",sku:"PA",price:"120",stock:9}],orders:[]});
+      const rules=new LocalRulesLlmClient(()=>ai.getBusiness(),()=>commerce.activeCatalog());
+      const request={system:"",messages:[{role:"user" as const,content:"Tem estoque da Peça A?"}],model:"local-rules",maxTokens:200};
+      const before=JSON.parse((await rules.generate(request)).text) as {replyMessages:string[]};
+      expect(before.replyMessages.join(" ")).not.toContain("9");
+      commerce.enableCatalog(true);
+      const after=JSON.parse((await rules.generate(request)).text) as {replyMessages:string[]};
+      expect(after.replyMessages.join(" ")).toContain("Peça A");
+      expect(after.replyMessages.join(" ")).toContain("9");
+      expect(after.replyMessages.join(" ")).toMatch(/sincroniza|confirmar/i);
     }finally{await c.close();}
   });
   it("diagnóstico de regras locais não usa rede nem custa créditos",async()=>{
