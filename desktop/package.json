@@ -1,6 +1,6 @@
 {
   "name":"artisys-wppprospector-desktop",
-  "version":"0.1.4",
+  "version":"0.1.5",
   "description":"WppProspector CRM — Instalador Windows com licença local",
   "author":"ArtiSys",
   "private":true,
