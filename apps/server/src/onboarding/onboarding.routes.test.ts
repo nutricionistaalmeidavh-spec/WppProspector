@@ -41,6 +41,7 @@ describe("onboarding self-hosted do CRM", () => {
     expect((await request("PUT", "/onboarding/setup", { step: "review", status: "completed" })).statusCode).toBe(200);
     const state = (await request("GET", "/onboarding/state")).json();
     expect(state.setup).toMatchObject({ business: "completed", crm: "completed", whatsapp: "skipped", review: "completed" });
+    expect((await request("GET", "/onboarding/analytics")).json().skippedSteps).toBe(2);
     expect(state.ready).toBe(true);
   });
 
@@ -78,5 +79,6 @@ describe("onboarding self-hosted do CRM", () => {
     expect((await test.app.inject({ method: "GET", url: "/admin/api/onboarding/state" })).statusCode).toBe(401);
     expect((await request("PUT", "/onboarding/setup", { step: "adminToken", status: "completed" })).statusCode).toBe(422);
     expect((await request("PUT", "/onboarding/tour", { index: 999, status: "completed" })).statusCode).toBe(422);
+    expect((await request("GET", "/onboarding/analytics")).json().validationErrors).toBe(2);
   });
 });

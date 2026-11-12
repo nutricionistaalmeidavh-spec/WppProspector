@@ -24,6 +24,8 @@ export interface OnboardingAnalytics {
   ready: boolean;
   profileConfigured: boolean;
   firstOperations: number;
+  validationErrors: number;
+  skippedSteps: number;
   tours: Record<string,number>;
 }
 export const onboardingKey = ["onboarding","state"] as const;

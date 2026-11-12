@@ -23,3 +23,11 @@ CREATE TABLE onboarding_first_operations (
   opportunity_id TEXT NOT NULL UNIQUE REFERENCES crm_opportunities(id),
   completed_at TEXT NOT NULL
 );
+
+-- Métricas locais de tentativas de operação recusadas por validação (sem PII nem payload).
+CREATE TABLE onboarding_validation_errors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_id TEXT NOT NULL,
+  scope TEXT NOT NULL CHECK(scope IN ('setup','tour','first_operation')),
+  created_at TEXT NOT NULL
+);

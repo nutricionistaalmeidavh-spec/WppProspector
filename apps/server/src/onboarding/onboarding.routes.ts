@@ -69,6 +69,10 @@ export const registerOnboardingRoutes: FastifyPluginAsync<{
     return row ?? {leadPhone:null,companyId:null,opportunityId:null};
   }
   function ready(): boolean { return setup().review === "completed"; }
+  function recordValidationError(actorId:string,scope:"setup"|"tour"|"first_operation") {
+    db.prepare("INSERT INTO onboarding_validation_errors(actor_id,scope,created_at) VALUES(?,?,?)")
+      .run(actorId,scope,clock().toISOString());
+  }
 
   app.get("/api/onboarding/state", async (req, reply) => {
     const actor = actorOf(req);
@@ -83,13 +87,17 @@ export const registerOnboardingRoutes: FastifyPluginAsync<{
     if (!actor) return reply.code(401).send({error:"unauthorized"});
     if (!actor.admin) return reply.code(403).send({error:"Somente o administrador pode configurar a empresa."});
     const input = setupSchema.safeParse(req.body);
-    if (!input.success) return reply.code(422).send({error:"Etapa inválida"});
+    if (!input.success) {recordValidationError(actor.id,"setup");return reply.code(422).send({error:"Etapa inválida"});}
     const {step,status} = input.data;
-    if (step === "business" && status === "completed" && !profileConfigured())
+    if (step === "business" && status === "completed" && !profileConfigured()) {
+      recordValidationError(actor.id,"setup");
       return reply.code(409).send({error:"Cadastre o nome e o segmento da empresa antes de concluir."});
+    }
     if (step === "review" && status === "completed" &&
-      (!profileConfigured() || setup().crm !== "completed"))
+      (!profileConfigured() || setup().crm !== "completed")) {
+      recordValidationError(actor.id,"setup");
       return reply.code(409).send({error:"Finalize o cadastro da empresa e confirme o funil antes de concluir."});
+    }
     db.prepare("INSERT INTO onboarding_setup_steps(step,status,updated_at) VALUES(?,?,?) ON CONFLICT(step) DO UPDATE SET status=excluded.status,updated_at=excluded.updated_at")
       .run(step,status,clock().toISOString());
     return {setup:setup(),ready:ready()};
@@ -98,7 +106,7 @@ export const registerOnboardingRoutes: FastifyPluginAsync<{
     const actor = actorOf(req);
     if (!actor) return reply.code(401).send({error:"unauthorized"});
     const input = tourSchema.safeParse(req.body);
-    if (!input.success) return reply.code(422).send({error:"Progresso do tour inválido"});
+    if (!input.success) {recordValidationError(actor.id,"tour");return reply.code(422).send({error:"Progresso do tour inválido"});}
     db.prepare("INSERT INTO onboarding_tours(actor_id,status,step_index,updated_at) VALUES(?,?,?,?) ON CONFLICT(actor_id) DO UPDATE SET status=excluded.status,step_index=excluded.step_index,updated_at=excluded.updated_at")
       .run(actor.id,input.data.status,input.data.index,clock().toISOString());
     return tour(actor.id);
@@ -107,15 +115,21 @@ export const registerOnboardingRoutes: FastifyPluginAsync<{
     const actor = actorOf(req);
     if (!actor) return reply.code(401).send({error:"unauthorized"});
     const input = progressSchema.safeParse(req.body);
-    if (!input.success) return reply.code(422).send({error:"Dados inválidos"});
+    if (!input.success) {recordValidationError(actor.id,"first_operation");return reply.code(422).send({error:"Dados inválidos"});}
     const previous = draft(actor.id);
     const next = { ...previous, ...input.data };
-    if (next.leadPhone && !db.prepare("SELECT 1 FROM leads WHERE phone=?").get(next.leadPhone))
+    if (next.leadPhone && !db.prepare("SELECT 1 FROM leads WHERE phone=?").get(next.leadPhone)) {
+      recordValidationError(actor.id,"first_operation");
       return reply.code(422).send({error:"Lead não cadastrado"});
-    if (next.companyId && !db.prepare("SELECT 1 FROM crm_companies WHERE id=?").get(next.companyId))
+    }
+    if (next.companyId && !db.prepare("SELECT 1 FROM crm_companies WHERE id=?").get(next.companyId)) {
+      recordValidationError(actor.id,"first_operation");
       return reply.code(422).send({error:"Empresa não cadastrada"});
-    if (next.opportunityId && !db.prepare("SELECT 1 FROM crm_opportunities WHERE id=? AND lead_phone=? AND company_id=?").get(next.opportunityId,next.leadPhone,next.companyId))
+    }
+    if (next.opportunityId && !db.prepare("SELECT 1 FROM crm_opportunities WHERE id=? AND lead_phone=? AND company_id=?").get(next.opportunityId,next.leadPhone,next.companyId)) {
+      recordValidationError(actor.id,"first_operation");
       return reply.code(422).send({error:"Oportunidade não corresponde ao lead e à empresa"});
+    }
     db.prepare("INSERT INTO onboarding_operation_drafts(actor_id,lead_phone,company_id,opportunity_id,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(actor_id) DO UPDATE SET lead_phone=excluded.lead_phone,company_id=excluded.company_id,opportunity_id=excluded.opportunity_id,updated_at=excluded.updated_at")
       .run(actor.id,next.leadPhone,next.companyId,next.opportunityId,clock().toISOString());
     return draft(actor.id);
@@ -126,8 +140,10 @@ export const registerOnboardingRoutes: FastifyPluginAsync<{
     const input = operationSchema.safeParse(req.body);
     if (!input.success) return reply.code(422).send({error:"Dados inválidos"});
     const {leadPhone,opportunityId} = input.data;
-    if (!db.prepare("SELECT 1 FROM crm_opportunities o JOIN leads l ON l.phone=o.lead_phone WHERE o.id=? AND o.lead_phone=?").get(opportunityId,leadPhone))
+    if (!db.prepare("SELECT 1 FROM crm_opportunities o JOIN leads l ON l.phone=o.lead_phone WHERE o.id=? AND o.lead_phone=?").get(opportunityId,leadPhone)) {
+      recordValidationError(actor.id,"first_operation");
       return reply.code(422).send({error:"Oportunidade não vinculada ao lead canônico"});
+    }
     const existing = firstOperation();
     if (existing && (existing.leadPhone !== leadPhone || existing.opportunityId !== opportunityId))
       return reply.code(409).send({error:"A primeira operação desta instalação já foi concluída"});
@@ -140,7 +156,10 @@ export const registerOnboardingRoutes: FastifyPluginAsync<{
     if (!actor.admin) return reply.code(403).send({error:"forbidden"});
     const tours = db.prepare("SELECT status,COUNT(*) AS total FROM onboarding_tours GROUP BY status").all() as Array<{status:string;total:number}>;
     const firstOperations = db.prepare("SELECT COUNT(*) AS total FROM onboarding_first_operations").get() as {total:number};
+    const validationErrors = db.prepare("SELECT COUNT(*) AS total FROM onboarding_validation_errors").get() as {total:number};
+    const skippedSteps = Object.values(setup()).filter(status=>status==="skipped").length;
     return { setup: setup(), ready: ready(), firstOperations: firstOperations.total,
+      validationErrors: validationErrors.total, skippedSteps,
       tours: Object.fromEntries(tours.map(item => [item.status,item.total])),
       profileConfigured: profileConfigured() };
   });
