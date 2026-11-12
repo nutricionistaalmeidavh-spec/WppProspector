@@ -18,11 +18,11 @@ A licença é conferida antes do servidor iniciar e novamente a cada minuto. Exp
 
 ## Publicação
 
-`.github/workflows/desktop-trial-release.yml` valida contratos, testes, smoke e assinatura, empacota em runner Windows e publica o `.exe` na Release `v0.1.3-trial` quando a main recebe alterações relevantes, publicando diretamente na Release mesmo se o serviço de artefatos do Actions estiver indisponível. Um PR só gera artefato de QA, **não publica**. A URL de instalação pode ser distribuída após o job de Release estar verde:
+`.github/workflows/desktop-trial-release.yml` valida contratos, testes, smoke e assinatura, empacota em runner Windows e publica o `.exe` na Release `v0.1.5-trial` quando a main recebe alterações relevantes, publicando diretamente na Release mesmo se o serviço de artefatos do Actions estiver indisponível. Um PR só gera artefato de QA, **não publica**. A URL de instalação pode ser distribuída após o job de Release estar verde:
 
-`https://github.com/nutricionistaalmeidavh-spec/WppProspector/releases/download/v0.1.3-trial/ArtiSys-WppProspector-Setup-0.1.3-x64.exe`
+`https://github.com/nutricionistaalmeidavh-spec/WppProspector/releases/download/v0.1.5-trial/ArtiSys-WppProspector-Setup-0.1.5-x64.exe`
 
-O pipeline de release agora inicia o Node distribuído em Windows limpo, valida /admin/, login local e SQLite. Falhas de boot geram um arquivo local em %APPDATA%\\artisys-wppprospector-desktop\\logs\\desktop-boot.log (ou no userData definido pelo Electron), sem incluir códigos de licença ou credenciais locais.
+A release v0.1.5 inclui o onboarding com WhatsApp manual por padrão e motor automático opcional, validado com testes e aprovação explícita. O pipeline de release agora inicia o Node distribuído em Windows limpo, valida /admin/, login local e SQLite. Falhas de boot geram um arquivo local em %APPDATA%\\artisys-wppprospector-desktop\\logs\\desktop-boot.log (ou no userData definido pelo Electron), sem incluir códigos de licença ou credenciais locais.
 
 O executável não possui certificado Authenticode. Não prometa ausência de alertas SmartScreen. Teste a instalação e a autenticação em Windows limpo antes de enviar a um cliente.
 
