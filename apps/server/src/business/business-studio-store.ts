@@ -277,6 +277,28 @@ export class BusinessStudioStore {
       .all(limit) as Array<{id:string;source:"manual"|"shopify"|"integration";name:string;sku:string;price:string;stock:number|null;synced_at:string}>;
     return rows.map(row=>({id:row.id,source:row.source,name:row.name,sku:row.sku,price:row.price,stock:row.stock,syncedAt:row.synced_at}));
   }
+  /** Busca em FTS5 apenas no catálogo publicado/ativado. Indexado por gatilhos SQLite. */
+  searchCatalog(question:string,limit=5):CommerceProduct[] {
+    if(!this.commerceStatus().enabled)return [];
+    const stop=new Set(["voce","voces","tem","quero","queria","saber","qual","quanto","custa",
+      "preco","valor","item","produto","disponivel","estoque","para","com","uma","uns","das","dos",
+      "que","pode","meu","sua","seu","esse","essa","ele","ela","por","favor"]);
+    const tokens=(question.normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .toLowerCase().match(/[a-z0-9]+/g)??[])
+      .filter(token=>token.length>=2&&!stop.has(token)).slice(0,8);
+    if(tokens.length===0)return [];
+    const fts=tokens.map(token=>'"'+token+'*"').join(" OR ");
+    const rows=this.db.prepare(`SELECT p.id,p.source,p.name,p.sku,p.price,p.stock,p.synced_at
+      FROM business_commerce_fts f
+      JOIN business_commerce_products p ON p.rowid=f.rowid
+      WHERE business_commerce_fts MATCH ?
+      ORDER BY bm25(business_commerce_fts),p.id LIMIT ?`)
+      .all(fts,Math.min(Math.max(1,limit),20)) as
+      Array<{id:string;source:"manual"|"shopify"|"integration";name:string;sku:string;price:string;stock:number|null;synced_at:string}>;
+    return rows.map(row=>({id:row.id,source:row.source,name:row.name,sku:row.sku,
+      price:row.price,stock:row.stock,syncedAt:row.synced_at}));
+  }
+
   getOrders() {
     return (this.db.prepare("SELECT id,order_number,financial_status,fulfillment_status,total,created_at,synced_at FROM business_commerce_orders ORDER BY created_at DESC LIMIT 50")
       .all() as Array<{id:string;order_number:string;financial_status:string;fulfillment_status:string;total:string;created_at:string;synced_at:string}>)
