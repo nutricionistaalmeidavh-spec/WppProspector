@@ -48,13 +48,13 @@ export const registerBusinessStudioRoutes:FastifyPluginAsync<Deps> = async(app,d
   app.post("/api/business/studio/rules-publish",{preHandler:adminOnly},async(_request,reply)=>safe(()=>studio.publishRules(),reply));
   app.put("/api/business/studio/ai-draft",{preHandler:adminOnly},async(request,reply)=>safe(()=>deps.store.stageAi(request.body),reply));
   app.post("/api/business/studio/ai-publish",{preHandler:adminOnly},async(_request,reply)=>safe(()=>{
-    if(!deps.store.getPendingAi().published){
+    const staged=!deps.store.getPendingAi().published;
+    if(staged){
       studio.assertValidated("engine");
       if(!deps.db.prepare("SELECT 1 FROM business_settings_revisions WHERE kind='engine' LIMIT 1").get())studio.recordEngineRevision();
     }
     const result=deps.store.publishAi();
-    if(!deps.store.getPendingAi().published)throw new Error("Motor ainda pendente.");
-    studio.recordEngineRevision();
+    if(staged)studio.recordEngineRevision();
     return result;
   },reply));
 
