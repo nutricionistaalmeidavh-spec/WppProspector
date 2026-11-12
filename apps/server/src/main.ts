@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ConversationRepositoryPort } from "./conversation-engine/application/ports/conversation-repository.port.ts";
 import { GenerateReplyUseCase } from "./conversation-engine/application/use-cases/generate-reply.use-case.ts";
+import { automaticRepliesEnabled } from "./onboarding/response-mode.ts";
 import { loadConversationEngineEnv } from "./conversation-engine/infrastructure/config/env.ts";
 import { PendingInboundSweeper } from "./conversation-engine/infrastructure/boot/pending-inbound-sweeper.ts";
 import { InboundBatchCoordinator } from "./conversation-engine/infrastructure/inbound/inbound-batch-coordinator.ts";
@@ -186,6 +187,7 @@ const replySender = new ReplySenderAdapter({ sendTextMessage, logger, retryOnFai
 export { database };
 
 const generateReply = new GenerateReplyUseCase({
+  autoReplyEnabled: () => automaticRepliesEnabled(database),
   automation: { evaluate: (phone,text) => automationStore.evaluate(phone,text,{channelId:connections.activeChannelKey()}) },
   repository: conversationRepository,
   replyStrategy,
