@@ -13,7 +13,7 @@ export const menuOptionSchema = z.object({
 export const ruleInputSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(100),
-  match: z.enum(["equals","contains","starts_with"]),
+  match: z.enum(["equals","contains","starts_with","words"]),
   trigger: z.string().trim().min(1).max(120),
   action: z.enum(["reply","menu","handoff"]),
   response: z.string().trim().min(1).max(4096),
@@ -106,7 +106,8 @@ export class AutomationStore {
     for(const rule of this.listRules()){
       if(!rule.enabled)continue;
       const needle=normalize(rule.trigger);
-      const matched=rule.match==="equals" ? normalized===needle
+      const matched=rule.match==="words" ? (` ${normalized.replace(/[^a-z0-9]+/g," ")} `).includes(` ${needle.replace(/[^a-z0-9]+/g," ")} `)
+        : rule.match==="equals" ? normalized===needle
         : rule.match==="starts_with" ? normalized.startsWith(needle)
         : normalized.includes(needle);
       if(!matched)continue;
