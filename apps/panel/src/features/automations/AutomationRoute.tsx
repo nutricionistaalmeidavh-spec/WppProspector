@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Match = "equals" | "contains" | "starts_with";
-type Action = "reply" | "menu" | "handoff";
+type Action = "reply" | "menu" | "handoff" | "crm_set_stage";
 type EventType = "message.received"|"crm.opportunity_updated"|"commerce.inventory_updated";
 type ConditionField = "message.text"|"crm.stage"|"commerce.stock"|"commerce.sku"|"event.type";
 type ConditionOp = "equals"|"contains"|"starts_with"|"gte"|"lte";
@@ -18,7 +18,7 @@ type Condition = {field:ConditionField;op:ConditionOp;value:string};
 type Conditions = {match:"all"|"any";conditions:Condition[]};
 type MenuOption = {key:string;label:string;response:string;handoff:boolean};
 type Rule = {
-  id:string;name:string;match:Match;trigger:string;action:Action;response:string;eventType?:EventType;conditions?:Conditions;
+  id:string;name:string;match:Match;trigger:string;action:Action;response:string;eventType?:EventType;conditions?:Conditions;targetStage?:string;
   enabled:boolean;priority:number;options:MenuOption[];createdAt:string;updatedAt:string;
 };
 type Draft = Omit<Rule, "id" | "createdAt" | "updatedAt">;
@@ -83,7 +83,7 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
 
   function startEdit(rule:Rule){
     setEditId(rule.id);
-    setDraft({name:rule.name,match:rule.match,trigger:rule.trigger,eventType:rule.eventType??"message.received",conditions:rule.conditions,action:rule.action,response:rule.response,enabled:rule.enabled,priority:rule.priority,options:rule.options});
+    setDraft({name:rule.name,match:rule.match,trigger:rule.trigger,eventType:rule.eventType??"message.received",conditions:rule.conditions,action:rule.action,response:rule.response,enabled:rule.enabled,priority:rule.priority,options:rule.options,targetStage:rule.targetStage});
     setOptionsRaw(optionsText(rule.options));
     setError("");setMessage("");
   }
@@ -99,8 +99,8 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
     try{
       const result=await apiFetch<{steps:Array<{rule:string|null;source:string;reply:string;handoff:boolean;endConversation:boolean}>;sent:boolean;charged:boolean}>(
         "/business/studio/rules/simulate",
-        {method:"POST",body:{messages:ruleSample.split("\\n").map(v=>v.trim()).filter(Boolean),
-          eventType:draft.eventType??"message.received"}});
+        {method:"POST",body:{messages:ruleSample.split("\n").map(v=>v.trim()).filter(Boolean),
+          eventType:draft.eventType??"message.received",crmStage:draft.eventType==="crm.opportunity_updated"?"qualified":undefined}});
       setRuleSimulation(result);
     }catch(e){setError(e instanceof Error?e.message:"Erro na simulação");}
     finally{setBusy(false);}
@@ -112,6 +112,8 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
   async function saveRule(){
     const options=draft.action==="menu"?parseMenuOptions(optionsRaw):[];
     if(draft.action==="menu" && options.length===0)throw new Error("Inclua ao menos uma opção no menu.");
+    if(draft.action==="crm_set_stage"&&(!draft.targetStage||draft.eventType!=="crm.opportunity_updated"))
+      throw new Error("Escolha o evento e a etapa de destino.");
     const body={...draft,options};
     if(embedded){
       const items=editId?rules.map(rule=>rule.id===editId?{...body,id:editId}:rule):[...rules,body];
@@ -136,12 +138,14 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
           <div className="space-y-1.5"><Label htmlFor="r-name">Nome interno</Label><Input id="r-name" value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})} placeholder="Atendimento inicial" /></div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5"><Label htmlFor="r-match">Condição</Label><select id="r-match" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={draft.match} onChange={e=>setDraft({...draft,match:e.target.value as Match})}>{(Object.keys(matchNames) as Match[]).map(k=><option key={k} value={k}>{matchNames[k]}</option>)}</select></div>
-            <div className="space-y-1.5"><Label htmlFor="r-action">Ação</Label><select id="r-action" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={draft.action} onChange={e=>setDraft({...draft,action:e.target.value as Action})}><option value="reply">Responder</option><option value="menu">Menu de opções</option><option value="handoff">Transferir para humano</option></select></div>
+            <div className="space-y-1.5"><Label htmlFor="r-action">Ação</Label><select id="r-action" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={draft.action} onChange={e=>setDraft({...draft,action:e.target.value as Action,
+              ...(e.target.value==="crm_set_stage"?{targetStage:"proposal",conditions:draft.conditions??{
+                match:"all",conditions:[{field:"crm.stage",op:"equals",value:"qualified"}]}}:{})})}><option value="reply">Responder</option><option value="menu">Menu de opções</option><option value="handoff">Transferir para humano</option><option value="crm_set_stage" disabled={draft.eventType!=="crm.opportunity_updated"}>Mover oportunidade</option></select></div>
           </div>
           <div className="space-y-1.5"><Label htmlFor="r-event">Evento</Label>
             <select id="r-event" className="h-9 w-full rounded-md border bg-background px-3 text-sm"
               value={draft.eventType??"message.received"}
-              onChange={e=>setDraft({...draft,eventType:e.target.value as EventType,action:draft.action==="menu"&&e.target.value!=="message.received"?"reply":draft.action})}>
+              onChange={e=>setDraft({...draft,eventType:e.target.value as EventType,action:(draft.action==="menu"&&e.target.value!=="message.received")||(draft.action==="crm_set_stage"&&e.target.value!=="crm.opportunity_updated")?"reply":draft.action})}>
               <option value="message.received">Mensagem recebida</option>
               <option value="crm.opportunity_updated">Oportunidade atualizada</option>
               <option value="commerce.inventory_updated">Estoque sincronizado</option>
@@ -183,7 +187,13 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
                   {field:"message.text",op:"contains",value:""}]}})}>Adicionar condição</Button>
             </div>:null}
           </div>
-          <div className="space-y-1.5"><Label htmlFor="r-response">Resposta</Label><p className="text-xs text-muted-foreground">Variáveis disponíveis: <code>{"{telefone}"}</code> e <code>{"{mensagem}"}</code>.</p><textarea id="r-response" rows={4} maxLength={4096} className="w-full rounded-md border bg-background p-3 text-sm" value={draft.response} onChange={e=>setDraft({...draft,response:e.target.value})} placeholder="Olá! Como podemos ajudar?" /></div>
+          {draft.action==="crm_set_stage"?<div className="space-y-1.5">
+            <Label htmlFor="r-target-stage">Etapa de destino</Label>
+            <select id="r-target-stage" className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={draft.targetStage??"proposal"} onChange={e=>setDraft({...draft,targetStage:e.target.value})}>
+              {["new","contacted","replied","qualified","meeting","proposal","negotiation","won","lost"].map(stage=><option key={stage} value={stage}>{stage}</option>)}
+            </select>
+          </div>:<div className="space-y-1.5"><Label htmlFor="r-response">Resposta</Label><p className="text-xs text-muted-foreground">Variáveis disponíveis: <code>{"{telefone}"}</code> e <code>{"{mensagem}"}</code>.</p><textarea id="r-response" rows={4} maxLength={4096} className="w-full rounded-md border bg-background p-3 text-sm" value={draft.response} onChange={e=>setDraft({...draft,response:e.target.value})} placeholder="Olá! Como podemos ajudar?" /></div>}
           {draft.action==="menu"?<div className="space-y-1.5"><Label htmlFor="r-options">Opções do menu</Label><textarea id="r-options" rows={4} className="w-full rounded-md border bg-background p-3 font-mono text-xs" value={optionsRaw} onChange={e=>setOptionsRaw(e.target.value)} placeholder={"1|Suporte|Vou chamar o suporte|sim\n2|Vendas|Vamos falar de preços|não"} /><p className="text-xs text-muted-foreground">Uma opção por linha: tecla | título | resposta | sim/não para transferência.</p></div>:null}
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.enabled} onChange={e=>setDraft({...draft,enabled:e.target.checked})}/>Ativa</label>
@@ -208,7 +218,7 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
           {rules.length===0?<p className="text-sm text-muted-foreground">Nenhuma regra cadastrada. A resposta padrão continuará funcionando.</p>:null}
           {rules.map(rule=><div key={rule.id} className="rounded-lg border p-3">
             <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{rule.name}</strong><span className="text-xs text-muted-foreground">{rule.enabled?"Ativa":"Inativa"} · prioridade {rule.priority} · {rule.eventType??"message.received"}</span></div>
-            <p className="mt-1 text-xs text-muted-foreground">{matchNames[rule.match]}: “{rule.trigger}” · {rule.action==="menu"?"Menu":rule.action==="handoff"?"Transferência":"Resposta"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{matchNames[rule.match]}: “{rule.trigger}” · {      rule.action==="menu"?"Menu":rule.action==="handoff"?"Transferência":rule.action==="crm_set_stage"?"Mover para "+rule.targetStage:"Resposta"}</p>
             <p className="mt-2 whitespace-pre-wrap text-sm">{rule.response}</p>
             <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={()=>startEdit(rule)}>Editar</Button>
               <Button size="sm" variant="outline" disabled={busy} onClick={()=>void perform(async()=>{
