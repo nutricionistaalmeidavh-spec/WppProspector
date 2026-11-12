@@ -20,6 +20,13 @@ test('build inclui conteúdo intacto de prompts, conhecimento e migrations, sem 
     assert.equal(readFileSync(join(target, 'prompt.md'), 'utf8'), 'Conhecimento: ação e preço.\n');
     assert.equal(readFileSync(join(target, 'nested', '0001.sql'), 'utf8'), 'CREATE TABLE example(id INTEGER);\n');
     assert.equal(existsSync(join(target, 'module.ts')), false);
+    for (const legacy of ['reply-strategy.prompt.md','sales-knowledge.md','pricing.md']) {
+      writeFileSync(join(source, legacy), 'Dados legados ArtiSys — nunca distribuir.');
+    }
+    assert.equal(copyServerAssets(source, target), 2);
+    for (const legacy of ['reply-strategy.prompt.md','sales-knowledge.md','pricing.md']) {
+      assert.equal(existsSync(join(target, legacy)), false, legacy);
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
