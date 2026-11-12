@@ -199,10 +199,22 @@ function OpportunityDetail({ opportunity }: { opportunity: Opportunity }) {
       <PageHeader eyebrow="Oportunidade" title={opportunity.companyName} description={`${opportunity.title} · ${opportunity.leadName}`} actions={<StatusPill tone={stageTone(opportunity.stage)}>{OPPORTUNITY_STAGE_LABEL[opportunity.stage]}</StatusPill>} />
       <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
         <Card className="shadow-sm"><CardHeader><CardTitle className="text-base">Histórico comercial</CardTitle></CardHeader><CardContent><div className="relative space-y-5 before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-border">{timeline.map((event) => <div key={event.label} className="relative flex gap-4"><span className="relative z-10 mt-1.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 border-primary bg-background" /><div><p className="text-sm font-medium">{event.label}</p><p className="mt-0.5 text-sm text-muted-foreground">{event.detail}</p></div></div>)}</div></CardContent></Card>
-        <div className="space-y-4"><OpportunityEditor opportunity={opportunity}/><Card className="h-fit shadow-sm"><CardHeader><CardTitle className="text-base">Contexto</CardTitle></CardHeader><CardContent className="space-y-4 text-sm"><DetailRow icon={CircleDollarSign} label="Valor estimado" value={formatBrl(opportunity.estimatedValue)} /><DetailRow icon={UserRound} label="Responsável" value={opportunity.owner} /><DetailRow icon={CalendarClock} label="Próxima ação" value={opportunity.nextAction} /><DetailRow icon={Building2} label="Empresa" value={opportunity.companyName} />{opportunity.campaignName ? <DetailRow icon={ArrowRight} label="Campanha" value={opportunity.campaignName} /> : null}<div className="pt-2"><Link to={`/conversations/${encodeURIComponent(opportunity.leadPhone)}`} className="inline-flex w-full items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Abrir conversa</Link></div></CardContent></Card></div>
+        <div className="space-y-4"><OpportunityEditor opportunity={opportunity}/><Card className="h-fit shadow-sm"><CardHeader><CardTitle className="text-base">Contexto</CardTitle></CardHeader><CardContent className="space-y-4 text-sm"><DetailRow icon={CircleDollarSign} label="Valor estimado" value={formatBrl(opportunity.estimatedValue)} /><DetailRow icon={UserRound} label="Responsável" value={opportunity.owner} /><DetailRow icon={CalendarClock} label="Próxima ação" value={opportunity.nextAction} /><DetailRow icon={Building2} label="Empresa" value={opportunity.companyName} />{opportunity.campaignName ? <DetailRow icon={ArrowRight} label="Campanha" value={opportunity.campaignName} /> : null}<div className="pt-2"><Link to={`/conversations/${encodeURIComponent(opportunity.leadPhone)}`} className="inline-flex w-full items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Abrir conversa</Link><OpportunityConversations id={opportunity.id} primary={opportunity.leadPhone} /></div></CardContent></Card></div>
       </div>
     </div>
   );
+}
+
+function OpportunityConversations({id,primary}:{id:string;primary:string}) {
+  const query=useQuery({queryKey:["crm","opportunity-conversations",id],
+    queryFn:()=>apiFetch<{items:string[]}>("/crm/opportunities/"+encodeURIComponent(id)+"/conversations")});
+  const additional=(query.data?.items??[]).filter(phone=>phone!==primary);
+  if(!additional.length)return null;
+  return <div className="mt-3 space-y-1 border-t pt-3">
+    <p className="text-xs font-semibold">Outras conversas vinculadas</p>
+    {additional.map(phone=><Link key={phone} className="block text-xs text-primary hover:underline"
+      to={`/conversations/${encodeURIComponent(phone)}`}>{phone}</Link>)}
+  </div>;
 }
 
 function DetailRow({ icon: Icon, label, value }: { icon: typeof Building2; label: string; value: string }) {
