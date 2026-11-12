@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { createHash, randomBytes, timingSafeEqual, randomUUID } from "node:crypto";
 import { AutomationStore, ruleInputSchema, type RuleInput } from "../automation/automation-store.ts";
+import { evaluateRules, type RuleContext } from "../automation/rule-evaluator.ts";
 import { z } from "zod";
 import { businessSchema, type BusinessProfile, type BusinessAiStore } from "./business-ai-store.ts";
 
@@ -22,7 +23,6 @@ const commerceOrder=z.object({
  createdAt:z.string().datetime({offset:true}),
 }).strict();
 const commerceSync=z.object({products:z.array(catalogItem.strict()).max(2500),orders:z.array(commerceOrder).max(300)}).strict();
-const normalizeRuleText=(value:string)=>value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim().replace(/\s+/g," ");
 const hash=(value:string)=>createHash("sha256").update(value).digest("hex");
 
 export class StudioValidationError extends Error {}
@@ -143,21 +143,30 @@ export class BusinessStudioStore {
     this.db.prepare("DELETE FROM business_studio_validation WHERE scope='rules'").run();
     return this.getRulesDraft();
   }
-  previewRule(message:string) {
-    const rules=this.getRulesDraft().items.filter(r=>r.enabled)
-      .sort((a,b)=>(b.priority??0)-(a.priority??0));
-    const text=normalizeRuleText(message);
-    for (const rule of rules) {
-      const needle=normalizeRuleText(rule.trigger);
-      if(rule.match==="equals"?text===needle:rule.match==="starts_with"?text.startsWith(needle):text.includes(needle)) {
-        const response=rule.response.replace(/\{(telefone|mensagem)\}/g,(_token,key:string)=>
-          key==="telefone"?"[simulação]":message.slice(0,500));
-        return {rule:rule.name,reply:response+(rule.action==="menu"?"\n"+(rule.options??[]).map(option=>option.key+". "+option.label).join("\n"):""),
-          handoff:rule.action==="handoff",source:"automation"};
-      }
-    }
-    return null;
+  /** Simulador de regras puro: mesma implementação do atendimento e nenhuma escrita. */
+  simulateRuleSequence(messages:readonly string[], extra:Partial<Pick<RuleContext,
+    "eventType"|"crmStage"|"commerceStock"|"commerceSku">> = {}) {
+    const rules=this.getRulesDraft().items.map((raw,index)=>({...ruleInputSchema.parse(raw),id:raw.id??"draft-"+index}));
+    let session:string|null=null;
+    const steps=messages.map(message=>{
+      const context:RuleContext={phone:"[simulação]",message,eventType:extra.eventType??"message.received",
+        businessId:"simulation",channelId:"simulation",...extra};
+      const outcome=evaluateRules(rules,context,session);
+      session=outcome.nextMenuRuleId;
+      return {message,source:outcome.source,rule:rules.find(rule=>rule.id===outcome.matchedRuleId)?.name??null,
+        reply:outcome.decision?.replyMessages.join("\n")??"",handoff:outcome.decision?.handoffToHuman??false,
+        endConversation:outcome.decision?.endConversation??false,matchedRuleId:outcome.matchedRuleId};
+    });
+    return {steps,sessionPending:session!==null,sent:false,charged:false};
   }
+
+  previewRule(message:string) {
+    const sample=this.simulateRuleSequence([message]).steps[0];
+    if(!sample||sample.source==="none")return null;
+    return {rule:sample.rule??"Política obrigatória",reply:sample.reply,handoff:sample.handoff,
+      source:sample.source,matchedRuleId:sample.matchedRuleId};
+  }
+
   publishRules(){
     const draft=this.getRulesDraft();
     if(draft.published)throw new Error("Nenhuma alteração nas regras para publicar.");
