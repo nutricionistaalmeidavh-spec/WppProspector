@@ -288,22 +288,59 @@ export function OnboardingRoute() {
           <Button variant="outline" disabled={busy} onClick={()=>void verifyWhatsApp()}>Já conectei — verificar</Button>
         </div>:null}
       </div>:null}
-      {stepIndex===3?<div className="space-y-3">
-        <div className="flex items-start gap-3 rounded-lg border bg-muted/30 p-4"><ShieldCheck className="h-5 w-5 shrink-0 text-primary"/>
-          <div><p className="font-medium">Motor de regras local — R$ 0</p><p className="mt-1 text-sm text-muted-foreground">Self-hosted e open source. Respostas usam apenas os dados da sua empresa; nenhuma API paga é necessária.</p></div>
+      {stepIndex===3?<div className="space-y-4">
+        <div className="rounded-lg border p-4 space-y-2">
+          <p className="text-sm font-semibold">Como deseja atender pelo WhatsApp?</p>
+          <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+            <input type="radio" name="reply-mode" checked={replyMode==="manual"}
+              onChange={()=>setReplyMode("manual")}/>
+            <span><strong className="block">Atendimento manual — recomendado para começar</strong>
+              Você centraliza contatos, mensagens e oportunidades e responde pessoalmente pelo CRM. Nenhum robô responde clientes.</span>
+          </label>
+          <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+            <input type="radio" name="reply-mode" checked={replyMode==="automatic"}
+              onChange={()=>setReplyMode("automatic")}/>
+            <span><strong className="block">Preparar respostas automáticas — opcional</strong>
+              Motor local R$ 0. Só é ativado após simular as regras e aprová-las.</span>
+          </label>
         </div>
-        <div className="flex items-start gap-3 rounded-lg border p-4"><Sparkles className="h-5 w-5 shrink-0 text-muted-foreground"/>
-          <div><p className="font-medium">IA externa — opcional</p><p className="mt-1 text-sm text-muted-foreground">Anthropic, OpenAI ou servidor próprio são configurados separadamente, sem ativação ou cobrança automática.</p>
-            <Link to="/settings/business-ai" className="mt-2 inline-flex text-sm text-primary hover:underline">Configurar motor de regras / IA</Link></div>
+        {replyMode==="automatic"?<div className="space-y-3 rounded-xl border p-4">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold">Regras reais para {profile.segment||"sua empresa"}</p>
+            <p className="text-xs text-muted-foreground">Regras conservadoras de orientação e encaminhamento. Os preços, horários e demais informações devem ser confirmados pela empresa. Nenhuma regra será ativada ao preparar.</p>
+          </div>
+          {preparedRules.length===0?<Button type="button" variant="outline" disabled={busy}
+            onClick={()=>void prepareRules()}>Preparar regras em rascunho</Button>:<>
+            <ul className="space-y-2">{preparedRules.map(rule=><li key={rule.name} className="rounded-lg border p-3 text-sm">
+              <strong>{rule.name}</strong><p className="mt-1 text-xs text-muted-foreground">Gatilho: {rule.trigger}</p>
+              <p className="mt-2">{rule.response}</p></li>)}</ul>
+            <div className="space-y-1"><Label htmlFor="onboarding-rule-sample">Mensagem fictícia para simular</Label>
+              <Input id="onboarding-rule-sample" value={sample}
+                onChange={e=>{setSample(e.target.value);setRulesValidated(false);setRulesConsent(false);setSimulation(null);}}/>
+            </div>
+            <Button type="button" variant="outline" disabled={busy||!sample.trim()}
+              onClick={()=>void simulateRules()}>Simular regras sugeridas</Button>
+            {simulation?<div className="space-y-1 rounded-lg border p-3 text-sm">
+              <p className="font-semibold">Resposta simulada: {simulation.rule}</p>
+              <p>{simulation.reply}</p>
+              <p className="text-xs text-muted-foreground">WhatsApp não enviado · Custo externo R$ 0</p>
+            </div>:null}
+            {rulesValidated?<label className="flex gap-2 rounded-lg border p-3 text-sm">
+              <input type="checkbox" checked={rulesConsent} onChange={e=>setRulesConsent(e.target.checked)}/>
+              <span>Revisei e aprovo o envio automático dessas regras pelo WhatsApp após publicar. Sei que posso desligar o motor depois.</span>
+            </label>:null}
+            <Button type="button" disabled={busy||!rulesValidated||!rulesConsent}
+              onClick={()=>void approveRules()}>Aprovar e ativar respostas automáticas</Button>
+          </>}
+          <Link to="/settings/business-ai?step=rules" className="block text-sm text-primary hover:underline">
+            Editar regras detalhadas na Central do atendente virtual
+          </Link>
+        </div>:<div className="rounded-xl border p-4 text-sm">
+          O WhatsApp pode continuar conectado normalmente: leitura e respostas manuais, cadastro de leads e oportunidades, Kanban e histórico. O motor de respostas automáticas permanecerá desligado.
+        </div>}
+        <div className="rounded-lg border p-3 text-xs text-muted-foreground">
+          OpenAI, Anthropic e servidor próprio permanecem opcionais, sem ativação de serviços pagos.
         </div>
-        <div className="space-y-2 rounded-xl border p-4">
-          <h3 className="text-sm font-semibold">Regras sugeridas para {profile.segment || "sua empresa"}</h3>
-          <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
-            {guidance.rules.map(item=><li key={item}>{item}</li>)}
-          </ul>
-          <p className="text-xs text-muted-foreground">Apenas orientações. Nenhuma regra será cadastrada ou ativada automaticamente; revise as políticas reais no Motor de Regras / IA.</p>
-        </div>
-        <p className="text-xs text-muted-foreground">Continuar apenas confirma que você conhece as opções. Não altera o provedor atualmente ativo.</p>
       </div>:null}
       {stepIndex===4?<div className="space-y-4">
         <p className="text-sm text-muted-foreground">Ao concluir, você poderá explorar as telas em um tour opcional e realizar a primeira operação comercial assistida.</p>
@@ -311,7 +348,7 @@ export function OnboardingRoute() {
           <div className="rounded-lg border p-3 text-sm"><strong>Empresa</strong><p>{profile.name||"Não informada"} · {profile.segment||"Segmento pendente"}</p></div>
           <div className="rounded-lg border p-3 text-sm"><strong>Funil</strong><p>Etapas padrão do CRM</p></div>
           <div className="rounded-lg border p-3 text-sm"><strong>WhatsApp</strong><p>{stateQuery.data?.setup.whatsapp==="completed"?"Conexão verificada":stateQuery.data?.setup.whatsapp==="skipped"?"Configuração adiada":"Opcional"}</p></div>
-          <div className="rounded-lg border p-3 text-sm"><strong>IA</strong><p>Core gratuito disponível, APIs opcionais</p></div>
+          <div className="rounded-lg border p-3 text-sm"><strong>Respostas automáticas</strong><p>{stateQuery.data?.setup.rules==="completed"?"Motor local aprovado e ativo":stateQuery.data?.setup.rules==="skipped"?"Desligadas — atendimento manual":"Ainda não aprovadas"}</p></div>
         </div>
         <p className="flex items-center gap-2 text-xs text-muted-foreground"><CircleHelp className="h-4 w-4"/> Você pode rever todas essas configurações depois.</p>
       </div>:null}
@@ -322,9 +359,14 @@ export function OnboardingRoute() {
           {stepIndex===3?<Button variant="ghost" disabled={busy} onClick={()=>void saveStep("rules","skipped")}>Configurar mais tarde</Button>:null}
           <Button disabled={busy} onClick={()=>{
             if(stepIndex===2&&channel!=="later") {void verifyWhatsApp();return;}
+            if(stepIndex===3) {
+              if(replyMode==="manual") {void saveStep("rules","skipped");return;}
+              if(!rulesValidated||!rulesConsent) {setError("Simule e aprove as regras antes de continuar, ou escolha o atendimento manual.");return;}
+              void approveRules();return;
+            }
             void saveStep(current.id,stepIndex===2?"skipped":"completed");
           }}>
-            {busy?"Salvando…":stepIndex===0?"Salvar e continuar":stepIndex===4?"Concluir e conhecer o CRM":stepIndex===2?"Continuar":"Confirmar e continuar"}
+            {busy?"Salvando…":stepIndex===0?"Salvar e continuar":stepIndex===4?"Concluir e conhecer o CRM":stepIndex===2?"Continuar":stepIndex===3?(replyMode==="manual"?"Continuar com atendimento manual":"Aprovar e continuar"):"Confirmar e continuar"}
             <ChevronRight className="h-4 w-4"/>
           </Button>
         </div>
