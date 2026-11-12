@@ -111,7 +111,8 @@ function localEncryptionKey(): string {
   }
 }
 const businessAiStore = new BusinessAiStore(database, localEncryptionKey());
-const llmClient = new ConfigurableBusinessLlm(businessAiStore);
+const studioContext = new BusinessStudioStore(database, businessAiStore);
+const llmClient = new ConfigurableBusinessLlm(businessAiStore,()=>studioContext.activeCatalog());
 
 // O núcleo funciona sem Meta/Anthropic; ambos permanecem como opt-ins.
 const consentStore = new SqliteConsentStore(database);
@@ -144,7 +145,6 @@ const usageRecorder = conversationEnv.LLM_USAGE_TRACKING_ENABLED
   ? new SqliteUsageRecorder(database, logger)
   : new NoopUsageRecorder();
 
-const studioContext = new BusinessStudioStore(database, businessAiStore);
 const businessContextProvider = new MerchantBusinessContext(businessAiStore, () => studioContext.activeCommerceContext());
 
 // API de gestão (/admin): quando ligada, o repositório de conversas é embrulhado
