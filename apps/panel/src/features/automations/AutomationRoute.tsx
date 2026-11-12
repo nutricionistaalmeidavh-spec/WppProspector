@@ -22,6 +22,7 @@ type Rule = {
   enabled:boolean;priority:number;options:MenuOption[];createdAt:string;updatedAt:string;
 };
 type Draft = Omit<Rule, "id" | "createdAt" | "updatedAt">;
+type Execution = {ruleId:string|null;eventType:string;source:string;at:string};
 type Followup = {
   id:string;phone:string;message:string;dueAt:string;
   state:"pending"|"sending"|"sent"|"cancelled"|"failed";attempts:number;
@@ -45,6 +46,7 @@ const states:Record<Followup["state"],string>={pending:"Agendado",sending:"Envia
 export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
   const {role}=useSession();
   const [rules,setRules]=useState<Rule[]>([]);
+  const [executions,setExecutions]=useState<Execution[]>([]);
   const [followups,setFollowups]=useState<Followup[]>([]);
   const [enabled,setEnabled]=useState(false);
   const [loading,setLoading]=useState(true);
@@ -58,15 +60,18 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
   const [followupMessage,setFollowupMessage]=useState("");
   const [dueLocal,setDueLocal]=useState("");
   const [ruleSample,setRuleSample]=useState("Quero saber o preço");
-  const [ruleSimulation,setRuleSimulation]=useState<{steps:Array<{rule:string|null;source:string;reply:string;handoff:boolean;endConversation:boolean}>;sent:boolean;charged:boolean}|null>(null);
+  const [simulationCrmStage,setSimulationCrmStage]=useState("qualified");
+  const [simulationStock,setSimulationStock]=useState("0");
+  const [ruleSimulation,setRuleSimulation]=useState<{steps:Array<{rule:string|null;source:string;reply:string;handoff:boolean;endConversation:boolean;action?:{kind:string;stage:string}|null}>;sent:boolean;charged:boolean}|null>(null);
 
   async function refresh(){
-    const [r,f]=await Promise.all([
+    const [r,f,history]=await Promise.all([
       embedded ? apiFetch<{rulesDraft:{items:Rule[]}}>("/business/studio").then(x=>({items:x.rulesDraft.items})) :
         apiFetch<{items:Rule[]}>("/automations/rules"),
       apiFetch<{items:Followup[];enabled:boolean}>("/automations/followups"),
+      apiFetch<{items:Execution[]}>("/automations/executions"),
     ]);
-    setRules(r.items);setFollowups(f.items);setEnabled(f.enabled);
+    setRules(r.items);setFollowups(f.items);setEnabled(f.enabled);setExecutions(history.items);
   }
   useEffect(()=>{
     let active=true;
@@ -74,8 +79,9 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
       embedded ? apiFetch<{rulesDraft:{items:Rule[]}}>("/business/studio").then(x=>({items:x.rulesDraft.items})) :
         apiFetch<{items:Rule[]}>("/automations/rules"),
       apiFetch<{items:Followup[];enabled:boolean}>("/automations/followups"),
-    ]).then(([r,f])=>{
-      if(active){setRules(r.items);setFollowups(f.items);setEnabled(f.enabled);}
+      apiFetch<{items:Execution[]}>("/automations/executions"),
+    ]).then(([r,f,history])=>{
+      if(active){setRules(r.items);setFollowups(f.items);setEnabled(f.enabled);setExecutions(history.items);}
     }).catch(e=>{if(active)setError(e instanceof Error?e.message:"Não foi possível carregar as automações");})
       .finally(()=>{if(active)setLoading(false);});
     return ()=>{active=false;};
@@ -97,10 +103,12 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
   async function simulateRule(){
     setBusy(true);setError("");setRuleSimulation(null);
     try{
-      const result=await apiFetch<{steps:Array<{rule:string|null;source:string;reply:string;handoff:boolean;endConversation:boolean}>;sent:boolean;charged:boolean}>(
+      const result=await apiFetch<{steps:Array<{rule:string|null;source:string;reply:string;handoff:boolean;endConversation:boolean;action?:{kind:string;stage:string}|null}>;sent:boolean;charged:boolean}>(
         "/business/studio/rules/simulate",
         {method:"POST",body:{messages:ruleSample.split("\n").map(v=>v.trim()).filter(Boolean),
-          eventType:draft.eventType??"message.received",crmStage:draft.eventType==="crm.opportunity_updated"?"qualified":undefined}});
+          eventType:draft.eventType??"message.received",
+          crmStage:draft.eventType==="crm.opportunity_updated"?simulationCrmStage:undefined,
+          commerceStock:draft.eventType==="commerce.inventory_updated"?Number(simulationStock):undefined}});
       setRuleSimulation(result);
     }catch(e){setError(e instanceof Error?e.message:"Erro na simulação");}
     finally{setBusy(false);}
@@ -203,9 +211,19 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
             <Label htmlFor="rule-sample">Testar regras publicadas/rascunho (uma mensagem por linha)</Label>
             <textarea id="rule-sample" rows={2} className="w-full rounded-md border bg-background p-2 text-sm"
               value={ruleSample} onChange={e=>setRuleSample(e.target.value)}/>
+            {draft.eventType==="crm.opportunity_updated"?<label className="flex items-center gap-2 text-xs">Etapa de entrada
+              <select aria-label="Etapa da simulação" value={simulationCrmStage}
+                onChange={e=>setSimulationCrmStage(e.target.value)} className="rounded border bg-background px-2 py-1">
+                {["new","contacted","replied","qualified","meeting","proposal","negotiation","won","lost"].map(stage=><option key={stage} value={stage}>{stage}</option>)}
+              </select>
+            </label>:null}
+            {draft.eventType==="commerce.inventory_updated"?<label className="flex items-center gap-2 text-xs">Saldo de entrada
+              <Input aria-label="Saldo da simulação" type="number" min={0} className="w-24" value={simulationStock}
+                onChange={e=>setSimulationStock(e.target.value)}/>
+            </label>:null}
             <Button variant="outline" disabled={busy||!ruleSample.trim()} onClick={()=>void simulateRule()}>Simular sem enviar</Button>
             {ruleSimulation?<div role="status" className="space-y-1 text-xs">
-              {ruleSimulation.steps.map((step,i)=><p key={i}><strong>{step.rule??step.source}:</strong> {step.reply||"(sem resposta)"}{step.handoff?" · encaminhamento humano":""}</p>)}
+              {ruleSimulation.steps.map((step,i)=><p key={i}><strong>{step.rule??step.source}:</strong> {step.reply||"(sem resposta)"}{step.action?" · ação: mover etapa para "+step.action.stage:""}{step.handoff?" · encaminhamento humano":""}</p>)}
               <p className="text-muted-foreground">Sem mensagens enviadas nem consumo de API.</p>
             </div>:null}
           </div>:null}
@@ -233,6 +251,17 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
         </CardContent>
       </Card>
     </div>
+    <Card>
+      <CardHeader><CardTitle className="text-base">Histórico de execução das regras</CardTitle></CardHeader>
+      <CardContent className="space-y-2">
+        {executions.length===0?<p className="text-sm text-muted-foreground">Nenhuma execução registrada.</p>:null}
+        {executions.slice(0,15).map((item,i)=><div key={item.at+"-"+i} className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 text-xs">
+          <span>{rules.find(rule=>rule.id===item.ruleId)?.name??(item.source==="policy"?"Política obrigatória":"Regra removida")} · {item.eventType}</span>
+          <span className="text-muted-foreground">{fmtDate(item.at)}</span>
+        </div>)}
+        <p className="text-xs text-muted-foreground">O histórico não exibe conteúdos ou telefones dos clientes.</p>
+      </CardContent>
+    </Card>
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Clock3 className="h-4 w-4"/>Follow-ups autorizados</CardTitle></CardHeader>
       <CardContent className="space-y-4">
