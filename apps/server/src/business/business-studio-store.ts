@@ -57,6 +57,9 @@ export class BusinessStudioStore {
     const now = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
     try {
+      const old=this.ai.getBusiness();
+      const existing=this.db.prepare("SELECT 1 FROM business_profile_revisions LIMIT 1").get();
+      if(!existing&&old.name.trim())this.db.prepare("INSERT INTO business_profile_revisions(data_json,published_at) VALUES(?,?)").run(JSON.stringify(old),now);
       this.ai.saveBusiness(draft.profile);
       this.db.prepare("INSERT INTO business_profile_revisions(data_json,published_at) VALUES(?,?)")
         .run(JSON.stringify(draft.profile),now);
@@ -66,22 +69,64 @@ export class BusinessStudioStore {
     return this.getDraft();
   }
   history() {
-    return (this.db.prepare("SELECT revision,data_json,published_at FROM business_profile_revisions ORDER BY revision DESC LIMIT 30").all() as Array<{revision:number;data_json:string;published_at:string}>)
-      .map(row=>({revision:row.revision,publishedAt:row.published_at,name:businessSchema.parse(JSON.parse(row.data_json)).name}));
+    const profileVersions=(this.db.prepare("SELECT revision,data_json,published_at FROM business_profile_revisions ORDER BY revision DESC LIMIT 30").all()
+      as Array<{revision:number;data_json:string;published_at:string}>)
+      .map(row=>({kind:"profile" as const,revision:row.revision,publishedAt:row.published_at,
+        name:businessSchema.parse(JSON.parse(row.data_json)).name}));
+    const settingsVersions=(this.db.prepare("SELECT revision,kind,snapshot_json,published_at FROM business_settings_revisions ORDER BY revision DESC LIMIT 30").all()
+      as Array<{revision:number;kind:"engine"|"rules";snapshot_json:string;published_at:string}>)
+      .map(row=>({kind:row.kind,revision:row.revision,publishedAt:row.published_at,
+        name:row.kind==="engine"?"Motor: "+String((JSON.parse(row.snapshot_json) as {provider:string}).provider):
+          "Regras: "+String((JSON.parse(row.snapshot_json) as {items:unknown[]}).items.length)+" itens"}));
+    return [...profileVersions,...settingsVersions].sort((a,b)=>b.publishedAt.localeCompare(a.publishedAt)||b.revision-a.revision).slice(0,40);
   }
-  rollback(revision: number) {
-    const target = this.db.prepare("SELECT data_json FROM business_profile_revisions WHERE revision=?").get(revision) as {data_json:string}|undefined;
-    if (!target) throw new Error("Revisão não encontrada.");
-    const restore = businessSchema.parse(JSON.parse(target.data_json));
-    const now = new Date().toISOString();
+  rollback(revision:number,kind:"profile"|"engine"|"rules"="profile"){
+    if(kind!=="profile")return this.rollbackSettings(revision,kind);
+    const row=this.db.prepare("SELECT data_json FROM business_profile_revisions WHERE revision=?").get(revision) as {data_json:string}|undefined;
+    if(!row)throw new Error("Revisão não encontrada.");
+    const restored=businessSchema.parse(JSON.parse(row.data_json));
+    const now=new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.ai.saveBusiness(restore);
-      this.db.prepare("INSERT INTO business_profile_revisions(data_json,published_at) VALUES(?,?)").run(JSON.stringify(restore),now);
+    try{
+      this.ai.saveBusiness(restored);
+      this.db.prepare("INSERT INTO business_profile_revisions(data_json,published_at) VALUES(?,?)").run(JSON.stringify(restored),now);
       this.db.prepare("DELETE FROM business_profile_draft WHERE id=1").run();
       this.db.exec("COMMIT");
-    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
     return this.getDraft();
+  }
+  private rollbackSettings(revision:number,kind:"engine"|"rules"){
+    const row=this.db.prepare("SELECT snapshot_json FROM business_settings_revisions WHERE revision=? AND kind=?").get(revision,kind)
+      as {snapshot_json:string}|undefined;
+    if(!row)throw new Error("Revisão não encontrada.");
+    const snapshot=JSON.parse(row.snapshot_json) as unknown;
+    if(kind==="engine"){
+      const value=z.object({provider:z.enum(["rules","anthropic","openai","compatible"]),model:z.string(),endpoint:z.string()}).parse(snapshot);
+      // Requer a chave comercial ainda cadastrada; histórico nunca armazena tokens.
+      this.ai.saveAi(value);
+      this.db.prepare("DELETE FROM business_ai_pending WHERE id=1").run();
+      this.recordEngineRevision();
+      return this.ai.getAi();
+    }
+    const rules=z.object({items:z.array(ruleInputSchema).max(100)}).parse(snapshot).items;
+    this.db.exec("BEGIN IMMEDIATE");
+    try{
+      const store=new AutomationStore(this.db);
+      const ids=new Set(rules.map(x=>x.id));
+      for(const rule of rules)store.saveRule(rule);
+      for(const rule of store.listRules())if(!ids.has(rule.id))store.deleteRule(rule.id);
+      this.db.prepare("DELETE FROM business_rule_draft WHERE id=1").run();
+      this.db.prepare("INSERT INTO business_settings_revisions(kind,snapshot_json,published_at) VALUES('rules',?,?)")
+        .run(JSON.stringify({items:store.listRules()}),new Date().toISOString());
+      this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+    return this.getRulesDraft();
+  }
+  recordEngineRevision(){
+    const active=this.ai.getAi();
+    this.db.prepare("INSERT INTO business_settings_revisions(kind,snapshot_json,published_at) VALUES('engine',?,?)")
+      .run(JSON.stringify({provider:active.provider,model:active.model,endpoint:active.endpoint??""}),new Date().toISOString());
+    return active;
   }
 
 
@@ -122,10 +167,17 @@ export class BusinessStudioStore {
     this.db.exec("BEGIN IMMEDIATE");
     try{
       const automation=new AutomationStore(this.db);
+      const old=automation.listRules();
+      if(!this.db.prepare("SELECT 1 FROM business_settings_revisions WHERE kind='rules' LIMIT 1").get()){
+        this.db.prepare("INSERT INTO business_settings_revisions(kind,snapshot_json,published_at) VALUES('rules',?,?)")
+          .run(JSON.stringify({items:old}),new Date().toISOString());
+      }
       const keep=new Set(draft.items.map(x=>x.id));
       for(const item of draft.items)automation.saveRule(item);
       for(const item of automation.listRules())if(!keep.has(item.id))automation.deleteRule(item.id);
       this.db.prepare("DELETE FROM business_rule_draft WHERE id=1").run();
+      this.db.prepare("INSERT INTO business_settings_revisions(kind,snapshot_json,published_at) VALUES('rules',?,?)")
+        .run(JSON.stringify({items:automation.listRules()}),new Date().toISOString());
       this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
     return this.getRulesDraft();
