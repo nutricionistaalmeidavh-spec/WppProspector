@@ -1,0 +1,47 @@
+name: Playwright Visual QA
+
+# Abre o build real, sem publicar preview ou release.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    name: Browser QA / screenshots / desktop + mobile
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Build de produção com dependências existentes
+        run: |
+          npm ci
+          npm run build
+      - name: Playwright open source somente no runner de QA
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts @playwright/test@1.65.0
+          npx --no-install playwright install --with-deps chromium
+      - name: Jornadas visuais e screenshots reais
+        run: npx --no-install playwright test --config=playwright.visual.config.mjs
+      - name: Publicar screenshots, relatório HTML, JSON, vídeos e traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wppcrm-playwright-visual-qa
+          path: |
+            visual-qa/screenshots/
+            visual-qa/playwright-report/
+            visual-qa/test-results/
+            visual-qa/report.json
+          retention-days: 14
+          if-no-files-found: warn

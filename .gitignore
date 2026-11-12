@@ -18,3 +18,6 @@ coverage/
 
 # Chave local usada somente para cifrar chaves de APIs opcionais
 .ai-credentials-key
+
+# Screenshots, vídeos e traces do QA visual (upload apenas pelo Actions)
+visual-qa/

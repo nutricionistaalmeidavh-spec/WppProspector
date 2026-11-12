@@ -59,7 +59,8 @@ export function createAdminSessionGuard(deps: {
     const allowedLead=request.method==="POST"&&apiPath==="/api/leads";
     const allowedManualMessage=request.method==="POST"&&
       /^\/api\/conversations\/[^/]+\/messages$/.test(apiPath);
-    if(!allowedCrm&&!allowedLead&&!allowedManualMessage)
+    const allowedOnboarding = /^\/api\/onboarding\/(?:tour|first-operation(?:\/progress)?)$/.test(apiPath);
+    if(!allowedCrm&&!allowedLead&&!allowedManualMessage&&!allowedOnboarding)
       return reply.code(403).send({error:"forbidden"});
   };
 }
