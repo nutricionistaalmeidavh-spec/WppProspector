@@ -48,7 +48,7 @@ export interface Followup {
 
 /** Templates antigos preservados para a API e migrações existentes. */
 export function renderAutomationTemplate(source:string, phone:string, inboundText:string):string {
-  return source.replace(/\\{(telefone|mensagem)\\}/g, (_token:string,key:string)=>
+  return source.replace(/\{(telefone|mensagem)\}/g, (_token:string,key:string)=>
     key==="telefone" ? phone : inboundText.slice(0,500));
 }
 
