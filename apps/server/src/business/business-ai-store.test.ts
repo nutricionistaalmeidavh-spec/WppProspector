@@ -49,6 +49,30 @@ describe("perfil de loja e motor de regras genérico", () => {
     } finally { db.close(); }
   });
 
+  it("não usa produto citado em mensagens antigas para responder outra pergunta", async () => {
+    const db = openDatabase(":memory:");
+    try {
+      const store = new BusinessAiStore(db, "a".repeat(64));
+      store.saveBusiness({ ...store.getBusiness(), name: "Loja QA",
+        products: [
+          { name: "Camisa Azul", price: "R$ 45", description: "" },
+          { name: "Tênis Verde", price: "R$ 99", description: "" },
+        ] });
+      const bot = new LocalRulesLlmClient(() => store.getBusiness());
+      const result = await bot.generate({
+        system: "", model: "local-rules", maxTokens: 200,
+        messages: [
+          {role: "user", content: "Quanto custa Camisa Azul?"},
+          {role: "assistant", content: "R$ 45"},
+          {role: "user", content: "Quanto custa Tênis Verde?"},
+        ],
+      });
+      const reply = JSON.parse(result.text).replyMessages.join(" ");
+      expect(reply).toContain("R$ 99");
+      expect(reply).not.toContain("R$ 45");
+    } finally { db.close(); }
+  });
+
   it("cifra chaves da Anthropic/OpenAI e não as devolve na configuração pública", () => {
     const db = openDatabase(":memory:");
     try {
