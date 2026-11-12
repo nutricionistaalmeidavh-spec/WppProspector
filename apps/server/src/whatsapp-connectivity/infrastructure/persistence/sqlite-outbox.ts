@@ -19,6 +19,12 @@ export class SqliteOutbox {
       .run(operationId, kind, JSON.stringify(payload), now, now);
   }
 
+  get(operationId: string): (OutboxJob & {providerMessageId:string|null}) | null {
+    const row=this.db.prepare(`SELECT operation_id,kind,payload_json,attempts,state,provider_message_id
+      FROM outbound_jobs WHERE operation_id=?`).get(operationId) as Record<string,unknown>|undefined;
+    return row ? {...this.fromRow(row),providerMessageId:row.provider_message_id==null?null:String(row.provider_message_id)} : null;
+  }
+
   pending(): OutboxJob[] {
     const rows = this.db.prepare(`SELECT operation_id,kind,payload_json,attempts,state
       FROM outbound_jobs WHERE state='pending' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)

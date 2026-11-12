@@ -401,4 +401,25 @@ describe("GenerateReplyUseCase", () => {
       expect(sender.sent.map((s) => s.body)).toEqual(["Olá"]);
     });
   });
+  it("prioriza opt-out mesmo se o avaliador comercial lançar exceção", async()=>{
+    seededConversation(repo,["safety-001"]);
+    const conversation=await repo.load(PHONE);
+    expect(conversation).not.toBeNull();
+    // A mensagem recebida é uma recusa inequívoca de contato.
+    const c=Conversation.createNew(PHONE);
+    c.recordInboundTurn({text:"Não quero mais mensagens, pare",timestamp:t0,messageId:"safety-002"});
+    repo.seed(c);
+    const llm=new ScriptedLlmClient([]);
+    const sender=new RecordingReplySender();
+    const useCase=new GenerateReplyUseCase({
+      repository:repo,replyStrategy:strategy(),llmClient:llm,replySender:sender,
+      businessContextProvider:new FakeBusinessContext(),usageRecorder:new RecordingUsageRecorder(),
+      logger,retryBackoffMs:0,clock:()=>t0,
+      automation:{evaluate:()=>{throw new Error("falha de SQLite");}},
+    });
+    await useCase.execute(PHONE,["safety-002"]);
+    expect(sender.sent).toHaveLength(0);
+    expect(llm.calls).toHaveLength(0);
+    expect((await repo.load(PHONE))?.pendingInboundTurns).toHaveLength(0);
+  });
 });

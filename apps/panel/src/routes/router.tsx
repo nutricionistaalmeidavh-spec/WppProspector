@@ -20,19 +20,31 @@ import { CommercialRoute } from "@/features/crm/CommercialRoute";
 import { TeamRoute } from "@/features/crm/TeamRoute";
 import { CampaignDetailRoute, CampaignsRoute, ImportsRoute } from "@/features/campaigns/CampaignRoutes";
 import { InboxRoute } from "@/features/inbox/InboxRoute";
+import { ContactsRoute } from "@/features/contacts/ContactsRoute";
 import { CampaignAnalyticsRoute, ConversionsRoute, FunnelRoute } from "@/features/analytics/AnalyticsRoutes";
 import { SettingsRoute } from "@/features/settings/SettingsRoute";
 import { WhatsAppRoute } from "@/features/settings/WhatsAppRoute";
 import { BusinessAiSettingsRoute } from "@/features/settings/BusinessAiSettingsRoute";
 import { AutomationRoute } from "@/features/automations/AutomationRoute";
+import { OnboardingRoute } from "@/features/onboarding/OnboardingRoute";
+import { FirstOperationRoute } from "@/features/onboarding/FirstOperationRoute";
+import { OnboardingAnalyticsRoute } from "@/features/onboarding/OnboardingAnalyticsRoute";
+import { useOnboardingState } from "@/features/onboarding/api";
 
 function ProtectedLayout() {
-  const { status } = useSession();
+  const { status, role } = useSession();
+  const onboarding = useOnboardingState(status==="authenticated" && role==="admin");
   const location = useLocation();
 
   if (status === "checking") return <FullScreenLoader />;
   if (status === "anonymous") {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  }
+
+  if (role==="admin" && !location.pathname.startsWith("/onboarding") &&
+    onboarding.data && !onboarding.data.ready &&
+    onboarding.data.setup.review!=="skipped" && !onboarding.data.profileConfigured) {
+    return <Navigate to="/onboarding" replace/>;
   }
 
   return (
@@ -49,11 +61,15 @@ export const appRoutes: RouteObject[] = [
     children: [
       { index: true, element: <Navigate to="/overview" replace /> },
       { path: "overview", element: <OverviewRoute /> },
+      { path: "onboarding", element: <OnboardingRoute /> },
+      { path: "onboarding/first-operation", element: <FirstOperationRoute /> },
+      { path: "settings/onboarding", element: <OnboardingAnalyticsRoute /> },
 
       { path: "crm/pipeline", element: <PipelineRoute /> },
       { path: "crm/opportunities", element: <OpportunitiesRoute /> },
       { path: "crm/opportunities/:id", element: <OpportunityDetailRoute /> },
       { path: "crm/leads", element: <LeadsRoute /> },
+      { path: "crm/contacts", element: <ContactsRoute /> },
       { path: "crm/companies", element: <CompaniesRoute /> },
       { path: "crm/commercial", element: <CommercialRoute /> },
       { path: "settings/team", element: <TeamRoute /> },

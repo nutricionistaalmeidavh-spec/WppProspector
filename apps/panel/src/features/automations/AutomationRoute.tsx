@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
+import { useSession } from "@/auth/session";
 import { Clock3, MessageSquareText, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { PageHeader } from "@/components/PageHeader";
@@ -8,18 +10,24 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Match = "equals" | "contains" | "starts_with";
-type Action = "reply" | "menu" | "handoff";
+type Action = "reply" | "menu" | "handoff" | "crm_set_stage";
+type EventType = "message.received"|"crm.opportunity_updated"|"commerce.inventory_updated";
+type ConditionField = "message.text"|"crm.stage"|"commerce.stock"|"commerce.sku"|"event.type";
+type ConditionOp = "equals"|"contains"|"starts_with"|"gte"|"lte";
+type Condition = {field:ConditionField;op:ConditionOp;value:string};
+type Conditions = {match:"all"|"any";conditions:Condition[]};
 type MenuOption = {key:string;label:string;response:string;handoff:boolean};
 type Rule = {
-  id:string;name:string;match:Match;trigger:string;action:Action;response:string;
+  id:string;name:string;match:Match;trigger:string;action:Action;response:string;eventType?:EventType;conditions?:Conditions;targetStage?:string;
   enabled:boolean;priority:number;options:MenuOption[];createdAt:string;updatedAt:string;
 };
 type Draft = Omit<Rule, "id" | "createdAt" | "updatedAt">;
+type Execution = {ruleId:string|null;eventType:string;source:string;at:string};
 type Followup = {
   id:string;phone:string;message:string;dueAt:string;
   state:"pending"|"sending"|"sent"|"cancelled"|"failed";attempts:number;
 };
-const emptyDraft:Draft = {name:"",match:"contains",trigger:"",action:"reply",response:"",enabled:true,priority:0,options:[]};
+const emptyDraft:Draft = {name:"",match:"contains",trigger:"",eventType:"message.received",action:"reply",response:"",enabled:true,priority:0,options:[]};
 
 export function parseMenuOptions(value:string):MenuOption[]{
   return value.split("\n").map(line=>line.trim()).filter(Boolean).map(line=>{
@@ -35,8 +43,10 @@ const fmtDate=(date:string)=>new Date(date).toLocaleString("pt-BR",{dateStyle:"s
 const matchNames:Record<Match,string>={equals:"Texto exato",contains:"Contém texto",starts_with:"Começa com"};
 const states:Record<Followup["state"],string>={pending:"Agendado",sending:"Enviando",sent:"Enviado",cancelled:"Cancelado",failed:"Falhou"};
 
-export function AutomationRoute(){
+export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
+  const {role}=useSession();
   const [rules,setRules]=useState<Rule[]>([]);
+  const [executions,setExecutions]=useState<Execution[]>([]);
   const [followups,setFollowups]=useState<Followup[]>([]);
   const [enabled,setEnabled]=useState(false);
   const [loading,setLoading]=useState(true);
@@ -49,29 +59,37 @@ export function AutomationRoute(){
   const [phone,setPhone]=useState("");
   const [followupMessage,setFollowupMessage]=useState("");
   const [dueLocal,setDueLocal]=useState("");
+  const [ruleSample,setRuleSample]=useState("Quero saber o preço");
+  const [simulationCrmStage,setSimulationCrmStage]=useState("qualified");
+  const [simulationStock,setSimulationStock]=useState("0");
+  const [ruleSimulation,setRuleSimulation]=useState<{steps:Array<{rule:string|null;source:string;reply:string;handoff:boolean;endConversation:boolean;action?:{kind:string;stage:string}|null}>;sent:boolean;charged:boolean}|null>(null);
 
   async function refresh(){
-    const [r,f]=await Promise.all([
-      apiFetch<{items:Rule[]}>("/automations/rules"),
+    const [r,f,history]=await Promise.all([
+      embedded ? apiFetch<{rulesDraft:{items:Rule[]}}>("/business/studio").then(x=>({items:x.rulesDraft.items})) :
+        apiFetch<{items:Rule[]}>("/automations/rules"),
       apiFetch<{items:Followup[];enabled:boolean}>("/automations/followups"),
+      apiFetch<{items:Execution[]}>("/automations/executions"),
     ]);
-    setRules(r.items);setFollowups(f.items);setEnabled(f.enabled);
+    setRules(r.items);setFollowups(f.items);setEnabled(f.enabled);setExecutions(history.items);
   }
   useEffect(()=>{
     let active=true;
     Promise.all([
-      apiFetch<{items:Rule[]}>("/automations/rules"),
+      embedded ? apiFetch<{rulesDraft:{items:Rule[]}}>("/business/studio").then(x=>({items:x.rulesDraft.items})) :
+        apiFetch<{items:Rule[]}>("/automations/rules"),
       apiFetch<{items:Followup[];enabled:boolean}>("/automations/followups"),
-    ]).then(([r,f])=>{
-      if(active){setRules(r.items);setFollowups(f.items);setEnabled(f.enabled);}
+      apiFetch<{items:Execution[]}>("/automations/executions"),
+    ]).then(([r,f,history])=>{
+      if(active){setRules(r.items);setFollowups(f.items);setEnabled(f.enabled);setExecutions(history.items);}
     }).catch(e=>{if(active)setError(e instanceof Error?e.message:"Não foi possível carregar as automações");})
       .finally(()=>{if(active)setLoading(false);});
     return ()=>{active=false;};
-  },[]);
+  },[embedded]);
 
   function startEdit(rule:Rule){
     setEditId(rule.id);
-    setDraft({name:rule.name,match:rule.match,trigger:rule.trigger,action:rule.action,response:rule.response,enabled:rule.enabled,priority:rule.priority,options:rule.options});
+    setDraft({name:rule.name,match:rule.match,trigger:rule.trigger,eventType:rule.eventType??"message.received",conditions:rule.conditions,action:rule.action,response:rule.response,enabled:rule.enabled,priority:rule.priority,options:rule.options,targetStage:rule.targetStage});
     setOptionsRaw(optionsText(rule.options));
     setError("");setMessage("");
   }
@@ -82,16 +100,42 @@ export function AutomationRoute(){
     catch(e){setError(e instanceof Error?e.message:"Erro ao salvar");}
     finally{setBusy(false);}
   }
+  async function simulateRule(){
+    setBusy(true);setError("");setRuleSimulation(null);
+    try{
+      const result=await apiFetch<{steps:Array<{rule:string|null;source:string;reply:string;handoff:boolean;endConversation:boolean;action?:{kind:string;stage:string}|null}>;sent:boolean;charged:boolean}>(
+        "/business/studio/rules/simulate",
+        {method:"POST",body:{messages:ruleSample.split("\n").map(v=>v.trim()).filter(Boolean),
+          eventType:draft.eventType??"message.received",
+          crmStage:draft.eventType==="crm.opportunity_updated"?simulationCrmStage:undefined,
+          commerceStock:draft.eventType==="commerce.inventory_updated"?Number(simulationStock):undefined}});
+      setRuleSimulation(result);
+    }catch(e){setError(e instanceof Error?e.message:"Erro na simulação");}
+    finally{setBusy(false);}
+  }
+  function updateCondition(index:number,patch:Partial<Condition>){
+    setDraft(current=>({...current,conditions:{match:current.conditions?.match??"all",
+      conditions:(current.conditions?.conditions??[]).map((item,i)=>i===index?{...item,...patch}:item)}}));
+  }
   async function saveRule(){
     const options=draft.action==="menu"?parseMenuOptions(optionsRaw):[];
     if(draft.action==="menu" && options.length===0)throw new Error("Inclua ao menos uma opção no menu.");
+    if(draft.action==="crm_set_stage"&&(!draft.targetStage||draft.eventType!=="crm.opportunity_updated"))
+      throw new Error("Escolha o evento e a etapa de destino.");
     const body={...draft,options};
-    await apiFetch(editId?"/automations/rules/"+editId:"/automations/rules",{method:editId?"PUT":"POST",body});
-    clearForm();setMessage("Regra salva.");
+    if(embedded){
+      const items=editId?rules.map(rule=>rule.id===editId?{...body,id:editId}:rule):[...rules,body];
+      await apiFetch("/business/studio/rules-draft",{method:"PUT",body:{items}});
+    }else{
+      await apiFetch(editId?"/automations/rules/"+editId:"/automations/rules",{method:editId?"PUT":"POST",body});
+    }
+    clearForm();setMessage(embedded?"Regra salva no rascunho; teste antes de publicar.":"Regra salva.");
   }
 
+  if(role==="admin"&&!embedded)return <Navigate to="/settings/business-ai?step=rules" replace/>;
   return <div className="space-y-6">
-    <PageHeader eyebrow="Atendimento" title="Automações" description="Gatilhos, respostas, menus e follow-ups locais. As regras são aplicadas antes da IA." />
+    {!embedded?<PageHeader eyebrow="Atendimento" title="Automações" description="Gatilhos, respostas, menus e follow-ups locais. As regras são aplicadas antes da IA." />:
+      <p className="text-sm text-muted-foreground">Edite gatilhos e menus nesta central. As mudanças ficam em rascunho até a publicação. Follow-ups continuam sujeitos ao consentimento.</p>}
     {error?<p role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive">{error}</p>:null}
     {message?<p role="status" className="text-sm text-muted-foreground">{message}</p>:null}
     {loading?<p className="text-sm text-muted-foreground">Carregando automações…</p>:null}
@@ -102,15 +146,87 @@ export function AutomationRoute(){
           <div className="space-y-1.5"><Label htmlFor="r-name">Nome interno</Label><Input id="r-name" value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})} placeholder="Atendimento inicial" /></div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5"><Label htmlFor="r-match">Condição</Label><select id="r-match" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={draft.match} onChange={e=>setDraft({...draft,match:e.target.value as Match})}>{(Object.keys(matchNames) as Match[]).map(k=><option key={k} value={k}>{matchNames[k]}</option>)}</select></div>
-            <div className="space-y-1.5"><Label htmlFor="r-action">Ação</Label><select id="r-action" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={draft.action} onChange={e=>setDraft({...draft,action:e.target.value as Action})}><option value="reply">Responder</option><option value="menu">Menu de opções</option><option value="handoff">Transferir para humano</option></select></div>
+            <div className="space-y-1.5"><Label htmlFor="r-action">Ação</Label><select id="r-action" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={draft.action} onChange={e=>setDraft({...draft,action:e.target.value as Action,
+              ...(e.target.value==="crm_set_stage"?{targetStage:"proposal",conditions:draft.conditions??{
+                match:"all",conditions:[{field:"crm.stage",op:"equals",value:"qualified"}]}}:{})})}><option value="reply">Responder</option><option value="menu">Menu de opções</option><option value="handoff">Transferir para humano</option><option value="crm_set_stage" disabled={draft.eventType!=="crm.opportunity_updated"}>Mover oportunidade</option></select></div>
           </div>
-          <div className="space-y-1.5"><Label htmlFor="r-trigger">Texto disparador</Label><Input id="r-trigger" value={draft.trigger} onChange={e=>setDraft({...draft,trigger:e.target.value})} placeholder="ex.: orçamento" /></div>
-          <div className="space-y-1.5"><Label htmlFor="r-response">Resposta</Label><p className="text-xs text-muted-foreground">Variáveis disponíveis: <code>{"{telefone}"}</code> e <code>{"{mensagem}"}</code>.</p><textarea id="r-response" rows={4} maxLength={4096} className="w-full rounded-md border bg-background p-3 text-sm" value={draft.response} onChange={e=>setDraft({...draft,response:e.target.value})} placeholder="Olá! Como podemos ajudar?" /></div>
+          <div className="space-y-1.5"><Label htmlFor="r-event">Evento</Label>
+            <select id="r-event" className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={draft.eventType??"message.received"}
+              onChange={e=>setDraft({...draft,eventType:e.target.value as EventType,action:(draft.action==="menu"&&e.target.value!=="message.received")||(draft.action==="crm_set_stage"&&e.target.value!=="crm.opportunity_updated")?"reply":draft.action})}>
+              <option value="message.received">Mensagem recebida</option>
+              <option value="crm.opportunity_updated">Oportunidade atualizada</option>
+              <option value="commerce.inventory_updated">Estoque sincronizado</option>
+            </select>
+            {draft.eventType!=="message.received"?<p className="text-xs text-muted-foreground">Eventos internos são avaliados sem disparar WhatsApp automaticamente.</p>:null}
+          </div>
+          <div className="space-y-1.5"><Label htmlFor="r-trigger">Texto disparador {draft.eventType!=="message.received"?"(opcional)":""}</Label><Input id="r-trigger" value={draft.trigger} onChange={e=>setDraft({...draft,trigger:e.target.value})} placeholder="ex.: orçamento" /></div>
+          <div className="space-y-2 rounded-lg border p-3">
+            <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox"
+              checked={Boolean(draft.conditions)} onChange={e=>setDraft({...draft,conditions:e.target.checked?
+                {match:"all",conditions:[{field:"message.text",op:"contains",value:""}]}:undefined})}/>Condições avançadas</label>
+            {draft.conditions?<div className="space-y-3">
+              <label className="flex items-center gap-2 text-xs">Combinação
+                <select aria-label="Combinação das condições" className="rounded border bg-background p-1"
+                  value={draft.conditions.match} onChange={e=>setDraft({...draft,conditions:{...draft.conditions!,match:e.target.value as "all"|"any"}})}>
+                  <option value="all">Todas (E)</option><option value="any">Qualquer uma (OU)</option>
+                </select>
+              </label>
+              {draft.conditions.conditions.map((condition,index)=><div key={index} className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+                <select aria-label={"Campo "+(index+1)} className="h-9 rounded border bg-background px-2 text-xs" value={condition.field}
+                  onChange={e=>updateCondition(index,{field:e.target.value as ConditionField})}>
+                  <option value="message.text">Mensagem</option><option value="crm.stage">Etapa CRM</option>
+                  <option value="commerce.stock">Saldo estoque</option><option value="commerce.sku">SKU</option>
+                  <option value="event.type">Tipo evento</option>
+                </select>
+                <select aria-label={"Operador "+(index+1)} className="h-9 rounded border bg-background px-2 text-xs" value={condition.op}
+                  onChange={e=>updateCondition(index,{op:e.target.value as ConditionOp})}>
+                  <option value="equals">Igual</option><option value="contains">Contém</option>
+                  <option value="starts_with">Começa com</option><option value="gte">Maior/igual</option><option value="lte">Menor/igual</option>
+                </select>
+                <Input aria-label={"Valor "+(index+1)} value={condition.value} maxLength={160}
+                  onChange={e=>updateCondition(index,{value:e.target.value})} placeholder="Valor"/>
+                <Button size="icon" variant="ghost" aria-label={"Excluir condição "+(index+1)}
+                  onClick={()=>setDraft({...draft,conditions:draft.conditions!.conditions.length>1?
+                    {...draft.conditions!,conditions:draft.conditions!.conditions.filter((_,i)=>i!==index)}:undefined})}><Trash2 className="h-4 w-4"/></Button>
+              </div>)}
+              <Button size="sm" variant="outline" disabled={draft.conditions.conditions.length>=12}
+                onClick={()=>setDraft({...draft,conditions:{...draft.conditions!,conditions:[...draft.conditions!.conditions,
+                  {field:"message.text",op:"contains",value:""}]}})}>Adicionar condição</Button>
+            </div>:null}
+          </div>
+          {draft.action==="crm_set_stage"?<div className="space-y-1.5">
+            <Label htmlFor="r-target-stage">Etapa de destino</Label>
+            <select id="r-target-stage" className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={draft.targetStage??"proposal"} onChange={e=>setDraft({...draft,targetStage:e.target.value})}>
+              {["new","contacted","replied","qualified","meeting","proposal","negotiation","won","lost"].map(stage=><option key={stage} value={stage}>{stage}</option>)}
+            </select>
+          </div>:<div className="space-y-1.5"><Label htmlFor="r-response">Resposta</Label><p className="text-xs text-muted-foreground">Variáveis disponíveis: <code>{"{telefone}"}</code> e <code>{"{mensagem}"}</code>.</p><textarea id="r-response" rows={4} maxLength={4096} className="w-full rounded-md border bg-background p-3 text-sm" value={draft.response} onChange={e=>setDraft({...draft,response:e.target.value})} placeholder="Olá! Como podemos ajudar?" /></div>}
           {draft.action==="menu"?<div className="space-y-1.5"><Label htmlFor="r-options">Opções do menu</Label><textarea id="r-options" rows={4} className="w-full rounded-md border bg-background p-3 font-mono text-xs" value={optionsRaw} onChange={e=>setOptionsRaw(e.target.value)} placeholder={"1|Suporte|Vou chamar o suporte|sim\n2|Vendas|Vamos falar de preços|não"} /><p className="text-xs text-muted-foreground">Uma opção por linha: tecla | título | resposta | sim/não para transferência.</p></div>:null}
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.enabled} onChange={e=>setDraft({...draft,enabled:e.target.checked})}/>Ativa</label>
             <label className="flex items-center gap-2 text-sm">Prioridade <Input aria-label="Prioridade" type="number" className="w-20" min={-1000} max={1000} value={draft.priority} onChange={e=>setDraft({...draft,priority:Number(e.target.value)})}/></label>
           </div>
+          {embedded?<div className="space-y-2 rounded-lg border p-3">
+            <Label htmlFor="rule-sample">Testar regras publicadas/rascunho (uma mensagem por linha)</Label>
+            <textarea id="rule-sample" rows={2} className="w-full rounded-md border bg-background p-2 text-sm"
+              value={ruleSample} onChange={e=>setRuleSample(e.target.value)}/>
+            {draft.eventType==="crm.opportunity_updated"?<label className="flex items-center gap-2 text-xs">Etapa de entrada
+              <select aria-label="Etapa da simulação" value={simulationCrmStage}
+                onChange={e=>setSimulationCrmStage(e.target.value)} className="rounded border bg-background px-2 py-1">
+                {["new","contacted","replied","qualified","meeting","proposal","negotiation","won","lost"].map(stage=><option key={stage} value={stage}>{stage}</option>)}
+              </select>
+            </label>:null}
+            {draft.eventType==="commerce.inventory_updated"?<label className="flex items-center gap-2 text-xs">Saldo de entrada
+              <Input aria-label="Saldo da simulação" type="number" min={0} className="w-24" value={simulationStock}
+                onChange={e=>setSimulationStock(e.target.value)}/>
+            </label>:null}
+            <Button variant="outline" disabled={busy||!ruleSample.trim()} onClick={()=>void simulateRule()}>Simular sem enviar</Button>
+            {ruleSimulation?<div role="status" className="space-y-1 text-xs">
+              {ruleSimulation.steps.map((step,i)=><p key={i}><strong>{step.rule??step.source}:</strong> {step.reply||"(sem resposta)"}{step.action?" · ação: mover etapa para "+step.action.stage:""}{step.handoff?" · encaminhamento humano":""}</p>)}
+              <p className="text-muted-foreground">Sem mensagens enviadas nem consumo de API.</p>
+            </div>:null}
+          </div>:null}
           <div className="flex flex-wrap gap-2"><Button disabled={busy} onClick={()=>void perform(saveRule)}><Plus className="h-4 w-4"/>{editId?"Salvar alterações":"Criar regra"}</Button>{editId?<Button variant="outline" onClick={clearForm}>Cancelar edição</Button>:null}</div>
         </CardContent>
       </Card>
@@ -119,16 +235,33 @@ export function AutomationRoute(){
         <CardContent className="space-y-3">
           {rules.length===0?<p className="text-sm text-muted-foreground">Nenhuma regra cadastrada. A resposta padrão continuará funcionando.</p>:null}
           {rules.map(rule=><div key={rule.id} className="rounded-lg border p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{rule.name}</strong><span className="text-xs text-muted-foreground">{rule.enabled?"Ativa":"Inativa"} · prioridade {rule.priority}</span></div>
-            <p className="mt-1 text-xs text-muted-foreground">{matchNames[rule.match]}: “{rule.trigger}” · {rule.action==="menu"?"Menu":rule.action==="handoff"?"Transferência":"Resposta"}</p>
+            <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{rule.name}</strong><span className="text-xs text-muted-foreground">{rule.enabled?"Ativa":"Inativa"} · prioridade {rule.priority} · {rule.eventType??"message.received"}</span></div>
+            <p className="mt-1 text-xs text-muted-foreground">{matchNames[rule.match]}: “{rule.trigger}” · {      rule.action==="menu"?"Menu":rule.action==="handoff"?"Transferência":rule.action==="crm_set_stage"?"Mover para "+rule.targetStage:"Resposta"}</p>
             <p className="mt-2 whitespace-pre-wrap text-sm">{rule.response}</p>
             <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={()=>startEdit(rule)}>Editar</Button>
-              <Button size="sm" variant="outline" disabled={busy} onClick={()=>void perform(async()=>{await apiFetch("/automations/rules/"+rule.id,{method:"PUT",body:{...rule,enabled:!rule.enabled}});})}>{rule.enabled?"Desativar":"Ativar"}</Button>
-              <Button size="sm" variant="ghost" disabled={busy} onClick={()=>{if(!window.confirm("Excluir esta regra?"))return;void perform(async()=>{await apiFetch("/automations/rules/"+rule.id,{method:"DELETE"});});}}><Trash2 className="h-3 w-3"/>Excluir</Button></div>
+              <Button size="sm" variant="outline" disabled={busy} onClick={()=>void perform(async()=>{
+                if(embedded)await apiFetch("/business/studio/rules-draft",{method:"PUT",body:{items:rules.map(item=>item.id===rule.id?{...rule,enabled:!rule.enabled}:item)}});
+                else await apiFetch("/automations/rules/"+rule.id,{method:"PUT",body:{...rule,enabled:!rule.enabled}});
+              })}>{rule.enabled?"Desativar":"Ativar"}</Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={()=>{if(!window.confirm("Excluir esta regra?"))return;void perform(async()=>{
+                if(embedded)await apiFetch("/business/studio/rules-draft",{method:"PUT",body:{items:rules.filter(item=>item.id!==rule.id)}});
+                else await apiFetch("/automations/rules/"+rule.id,{method:"DELETE"});
+              });}}><Trash2 className="h-3 w-3"/>Excluir</Button></div>
           </div>)}
         </CardContent>
       </Card>
     </div>
+    <Card>
+      <CardHeader><CardTitle className="text-base">Histórico de execução das regras</CardTitle></CardHeader>
+      <CardContent className="space-y-2">
+        {executions.length===0?<p className="text-sm text-muted-foreground">Nenhuma execução registrada.</p>:null}
+        {executions.slice(0,15).map((item,i)=><div key={item.at+"-"+i} className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 text-xs">
+          <span>{rules.find(rule=>rule.id===item.ruleId)?.name??(item.source==="policy"?"Política obrigatória":"Regra removida")} · {item.eventType}</span>
+          <span className="text-muted-foreground">{fmtDate(item.at)}</span>
+        </div>)}
+        <p className="text-xs text-muted-foreground">O histórico não exibe conteúdos ou telefones dos clientes.</p>
+      </CardContent>
+    </Card>
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Clock3 className="h-4 w-4"/>Follow-ups autorizados</CardTitle></CardHeader>
       <CardContent className="space-y-4">

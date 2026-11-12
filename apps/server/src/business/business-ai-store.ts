@@ -152,6 +152,7 @@ export class BusinessAiStore {
       } else {
         this.db.prepare("DELETE FROM business_ai_pending_secrets WHERE id=1").run();
       }
+      this.db.prepare("DELETE FROM business_studio_validation WHERE scope=\'engine\'").run();
       this.db.prepare("INSERT INTO business_ai_pending(id,provider,model,endpoint,updated_at) VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET provider=excluded.provider,model=excluded.model,endpoint=excluded.endpoint,updated_at=excluded.updated_at")
         .run(value.provider,model,endpoint,new Date().toISOString());
       this.db.exec("COMMIT");

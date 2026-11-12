@@ -1,4 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
+import { createHash, randomBytes, timingSafeEqual, randomUUID } from "node:crypto";
+import { AutomationStore, ruleInputSchema, type RuleInput } from "../automation/automation-store.ts";
+import { evaluateRules, type RuleContext } from "../automation/rule-evaluator.ts";
 import { z } from "zod";
 import { businessSchema, type BusinessProfile, type BusinessAiStore } from "./business-ai-store.ts";
 
@@ -10,7 +13,19 @@ const catalogItem = z.object({
   stock: z.number().int().min(0).nullable().default(null),
 });
 export type CatalogItem = z.infer<typeof catalogItem>;
-type CommerceProduct = CatalogItem & { source: "manual" | "shopify"; syncedAt: string };
+type CommerceProduct = CatalogItem & { source: "manual" | "shopify" | "integration"; syncedAt: string };
+const commerceOrder=z.object({
+ id:z.string().trim().min(1).max(160),
+ number:z.string().trim().min(1).max(100),
+ financialStatus:z.string().trim().max(80).default(""),
+ fulfillmentStatus:z.string().trim().max(80).default(""),
+ total:z.string().trim().max(80).default(""),
+ createdAt:z.string().datetime({offset:true}),
+}).strict();
+const commerceSync=z.object({products:z.array(catalogItem.strict()).max(2500),orders:z.array(commerceOrder).max(300)}).strict();
+const hash=(value:string)=>createHash("sha256").update(value).digest("hex");
+
+export class StudioValidationError extends Error {}
 
 export class BusinessStudioStore {
   constructor(
@@ -30,6 +45,7 @@ export class BusinessStudioStore {
     const updatedAt = new Date().toISOString();
     this.db.prepare("INSERT INTO business_profile_draft(id,data_json,updated_at) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json,updated_at=excluded.updated_at")
       .run(JSON.stringify(profile), updatedAt);
+    this.db.prepare("DELETE FROM business_studio_validation WHERE scope='profile'").run();
     return { profile, published: false, updatedAt };
   }
   /** Torna o rascunho oficial apenas após confirmação explícita. */
@@ -37,9 +53,13 @@ export class BusinessStudioStore {
     const draft = this.getDraft();
     if (draft.published) throw new Error("Não há alterações pendentes para publicar.");
     if (!draft.profile.name.trim()) throw new Error("Informe o nome da empresa antes de publicar.");
+    this.assertValidated("profile");
     const now = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
     try {
+      const old=this.ai.getBusiness();
+      const existing=this.db.prepare("SELECT 1 FROM business_profile_revisions LIMIT 1").get();
+      if(!existing&&old.name.trim())this.db.prepare("INSERT INTO business_profile_revisions(data_json,published_at) VALUES(?,?)").run(JSON.stringify(old),now);
       this.ai.saveBusiness(draft.profile);
       this.db.prepare("INSERT INTO business_profile_revisions(data_json,published_at) VALUES(?,?)")
         .run(JSON.stringify(draft.profile),now);
@@ -49,22 +69,219 @@ export class BusinessStudioStore {
     return this.getDraft();
   }
   history() {
-    return (this.db.prepare("SELECT revision,data_json,published_at FROM business_profile_revisions ORDER BY revision DESC LIMIT 30").all() as Array<{revision:number;data_json:string;published_at:string}>)
-      .map(row=>({revision:row.revision,publishedAt:row.published_at,name:businessSchema.parse(JSON.parse(row.data_json)).name}));
+    const profileVersions=(this.db.prepare("SELECT revision,data_json,published_at FROM business_profile_revisions ORDER BY revision DESC LIMIT 30").all() as Array<{revision:number;data_json:string;published_at:string}>)
+      .map(row=>({kind:"profile" as const,revision:row.revision,publishedAt:row.published_at,
+        name:businessSchema.parse(JSON.parse(row.data_json)).name}));
+    const settingsVersions=(this.db.prepare("SELECT revision,kind,snapshot_json,published_at FROM business_settings_revisions ORDER BY revision DESC LIMIT 30").all() as Array<{revision:number;kind:"engine"|"rules";snapshot_json:string;published_at:string}>)
+      .map(row=>({kind:row.kind,revision:row.revision,publishedAt:row.published_at,
+        name:row.kind==="engine"?"Motor: "+String((JSON.parse(row.snapshot_json) as {provider:string}).provider):
+          "Regras: "+String((JSON.parse(row.snapshot_json) as {items:unknown[]}).items.length)+" itens"}));
+    return [...profileVersions,...settingsVersions].sort((a,b)=>b.publishedAt.localeCompare(a.publishedAt)||b.revision-a.revision).slice(0,40);
   }
-  rollback(revision: number) {
-    const target = this.db.prepare("SELECT data_json FROM business_profile_revisions WHERE revision=?").get(revision) as {data_json:string}|undefined;
-    if (!target) throw new Error("Revisão não encontrada.");
-    const restore = businessSchema.parse(JSON.parse(target.data_json));
-    const now = new Date().toISOString();
+  rollback(revision:number,kind:"profile"|"engine"|"rules"="profile"){
+    if(kind!=="profile")return this.rollbackSettings(revision,kind);
+    const row=this.db.prepare("SELECT data_json FROM business_profile_revisions WHERE revision=?").get(revision) as {data_json:string}|undefined;
+    if(!row)throw new Error("Revisão não encontrada.");
+    const restored=businessSchema.parse(JSON.parse(row.data_json));
+    const now=new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.ai.saveBusiness(restore);
-      this.db.prepare("INSERT INTO business_profile_revisions(data_json,published_at) VALUES(?,?)").run(JSON.stringify(restore),now);
+    try{
+      this.ai.saveBusiness(restored);
+      this.db.prepare("INSERT INTO business_profile_revisions(data_json,published_at) VALUES(?,?)").run(JSON.stringify(restored),now);
       this.db.prepare("DELETE FROM business_profile_draft WHERE id=1").run();
       this.db.exec("COMMIT");
-    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
     return this.getDraft();
+  }
+  private rollbackSettings(revision:number,kind:"engine"|"rules"){
+    const row=this.db.prepare("SELECT snapshot_json FROM business_settings_revisions WHERE revision=? AND kind=?").get(revision,kind) as {snapshot_json:string}|undefined;
+    if(!row)throw new Error("Revisão não encontrada.");
+    const snapshot=JSON.parse(row.snapshot_json) as unknown;
+    if(kind==="engine"){
+      const value=z.object({provider:z.enum(["rules","anthropic","openai","compatible"]),model:z.string(),endpoint:z.string()}).parse(snapshot);
+      // Requer a chave comercial ainda cadastrada; histórico nunca armazena tokens.
+      this.ai.saveAi(value);
+      this.db.prepare("DELETE FROM business_ai_pending WHERE id=1").run();
+      this.db.prepare("DELETE FROM business_ai_pending_secrets WHERE id=1").run();
+      this.recordEngineRevision();
+      return this.ai.getAi();
+    }
+    const rules=z.object({items:z.array(ruleInputSchema).max(100)}).parse(snapshot).items;
+    this.db.exec("BEGIN IMMEDIATE");
+    try{
+      const store=new AutomationStore(this.db);
+      const ids=new Set(rules.map(x=>x.id));
+      for(const rule of rules)store.saveRule(rule);
+      for(const rule of store.listRules())if(!ids.has(rule.id))store.deleteRule(rule.id);
+      this.db.prepare("DELETE FROM business_rule_draft WHERE id=1").run();
+      this.db.prepare("INSERT INTO business_settings_revisions(kind,snapshot_json,published_at) VALUES('rules',?,?)")
+        .run(JSON.stringify({items:store.listRules()}),new Date().toISOString());
+      this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+    return this.getRulesDraft();
+  }
+  recordEngineRevision(){
+    const active=this.ai.getAi();
+    this.db.prepare("INSERT INTO business_settings_revisions(kind,snapshot_json,published_at) VALUES('engine',?,?)")
+      .run(JSON.stringify({provider:active.provider,model:active.model,endpoint:active.endpoint??""}),new Date().toISOString());
+    return active;
+  }
+
+
+  getRulesDraft(): {items:RuleInput[];published:boolean;updatedAt:string|null} {
+    const draft=this.db.prepare("SELECT rules_json,updated_at FROM business_rule_draft WHERE id=1").get() as {rules_json:string;updated_at:string}|undefined;
+    return draft?{items:ruleInputSchema.array().parse(JSON.parse(draft.rules_json)),published:false,updatedAt:draft.updated_at}:
+      {items:new AutomationStore(this.db).listRules(),published:true,updatedAt:null};
+  }
+  saveRulesDraft(input:unknown) {
+    const {items}=z.object({items:z.array(ruleInputSchema).max(100)}).parse(input);
+    const normalized=items.map(item=>({...item,id:item.id??randomUUID()}));
+    if(new Set(normalized.map(r=>r.id)).size!==normalized.length)throw new Error("Existem regras duplicadas.");
+    const now=new Date().toISOString();
+    this.db.prepare("INSERT INTO business_rule_draft(id,rules_json,updated_at) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET rules_json=excluded.rules_json,updated_at=excluded.updated_at")
+      .run(JSON.stringify(normalized),now);
+    this.db.prepare("DELETE FROM business_studio_validation WHERE scope='rules'").run();
+    return this.getRulesDraft();
+  }
+  /** Simulador de regras puro: mesma implementação do atendimento e nenhuma escrita. */
+  simulateRuleSequence(messages:readonly string[], extra:Partial<Pick<RuleContext,
+    "eventType"|"crmStage"|"commerceStock"|"commerceSku">> = {}) {
+    const rules=this.getRulesDraft().items.map((raw,index)=>({...ruleInputSchema.parse(raw),id:raw.id??"draft-"+index}));
+    let session:string|null=null;
+    const steps=messages.map(message=>{
+      const context:RuleContext={phone:"[simulação]",message,eventType:extra.eventType??"message.received",
+        businessId:"simulation",channelId:"simulation",
+        ...(extra.eventType==="crm.opportunity_updated"?{crmOpportunityId:"simulated-opportunity"}:{}),...extra};
+      const outcome=evaluateRules(rules,context,session);
+      session=outcome.nextMenuRuleId;
+      return {message,source:outcome.source,rule:rules.find(rule=>rule.id===outcome.matchedRuleId)?.name??null,
+        reply:outcome.decision?.replyMessages.join("\n")??"",handoff:outcome.decision?.handoffToHuman??false,
+        endConversation:outcome.decision?.endConversation??false,matchedRuleId:outcome.matchedRuleId,
+        action:outcome.action};
+    });
+    return {steps,sessionPending:session!==null,sent:false,charged:false};
+  }
+
+  previewRule(message:string) {
+    const sample=this.simulateRuleSequence([message]).steps[0];
+    if(!sample||sample.source==="none")return null;
+    return {rule:sample.rule??"Política obrigatória",reply:sample.reply,handoff:sample.handoff,
+      source:sample.source,matchedRuleId:sample.matchedRuleId};
+  }
+
+  publishRules(){
+    const draft=this.getRulesDraft();
+    if(draft.published)throw new Error("Nenhuma alteração nas regras para publicar.");
+    this.assertValidated("rules");
+    this.db.exec("BEGIN IMMEDIATE");
+    try{
+      const automation=new AutomationStore(this.db);
+      const old=automation.listRules();
+      if(!this.db.prepare("SELECT 1 FROM business_settings_revisions WHERE kind='rules' LIMIT 1").get()){
+        this.db.prepare("INSERT INTO business_settings_revisions(kind,snapshot_json,published_at) VALUES('rules',?,?)")
+          .run(JSON.stringify({items:old}),new Date().toISOString());
+      }
+      const keep=new Set(draft.items.map(x=>x.id));
+      for(const item of draft.items)automation.saveRule(item);
+      for(const item of automation.listRules())if(!keep.has(item.id))automation.deleteRule(item.id);
+      this.db.prepare("DELETE FROM business_rule_draft WHERE id=1").run();
+      this.db.prepare("INSERT INTO business_settings_revisions(kind,snapshot_json,published_at) VALUES('rules',?,?)")
+        .run(JSON.stringify({items:automation.listRules()}),new Date().toISOString());
+      this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+    return this.getRulesDraft();
+  }
+  private digest(scope:"profile"|"engine"|"rules"){
+    const value=scope==="profile"?this.getDraft().profile:
+      scope==="engine"?this.ai.getPendingAi():this.getRulesDraft().items;
+    return hash(JSON.stringify(value));
+  }
+  markValidated(scope:"profile"|"engine"|"rules"){
+    const now=new Date().toISOString();
+    this.db.prepare("INSERT INTO business_studio_validation(scope,digest,checked_at) VALUES(?,?,?) ON CONFLICT(scope) DO UPDATE SET digest=excluded.digest,checked_at=excluded.checked_at")
+      .run(scope,this.digest(scope),now);
+  }
+  isValidated(scope:"profile"|"engine"|"rules") {
+    const row=this.db.prepare("SELECT digest FROM business_studio_validation WHERE scope=?").get(scope) as {digest:string}|undefined;
+    return row?.digest===this.digest(scope);
+  }
+  assertValidated(scope:"profile"|"engine"|"rules"){
+    if(!this.isValidated(scope))throw new StudioValidationError("Valide o rascunho no Laboratório antes de publicar.");
+  }
+  getValidation(){
+    return {profileReady:this.getDraft().published||this.isValidated("profile"),
+      engineReady:this.ai.getPendingAi().published||this.isValidated("engine"),
+      rulesReady:this.getRulesDraft().published||this.isValidated("rules")};
+  }
+
+  integrationStatus(){
+    const row=this.db.prepare("SELECT created_at,last_sync_at FROM business_commerce_integrations WHERE id=1").get() as {created_at:string;last_sync_at:string|null}|undefined;
+    return {configured:!!row,createdAt:row?.created_at??null,lastSyncAt:row?.last_sync_at??null};
+  }
+  rotateIntegrationToken(){
+    const token=randomBytes(32).toString("base64url");
+    const now=new Date().toISOString();
+    this.db.prepare("INSERT INTO business_commerce_integrations(id,token_hash,created_at,last_sync_at) VALUES(1,?,?,NULL) ON CONFLICT(id) DO UPDATE SET token_hash=excluded.token_hash,created_at=excluded.created_at,last_sync_at=NULL")
+      .run(hash(token),now);
+    return {token,...this.integrationStatus(),path:"/admin/integrations/commerce/v1/sync"};
+  }
+  revokeIntegrationToken(){
+    this.db.prepare("DELETE FROM business_commerce_integrations WHERE id=1").run();
+    return this.integrationStatus();
+  }
+  validateIntegrationToken(token:string){
+    if(!token || token.length>256)return false;
+    const row=this.db.prepare("SELECT token_hash FROM business_commerce_integrations WHERE id=1").get() as {token_hash:string}|undefined;
+    if(!row)return false;
+    const actual=Buffer.from(hash(token),"hex"),expected=Buffer.from(row.token_hash,"hex");
+    return expected.length===actual.length&&timingSafeEqual(actual,expected);
+  }
+  private stockSnapshot(source:"manual"|"shopify"|"integration"):Map<string,number|null>{
+    const rows=this.db.prepare("SELECT id,stock FROM business_commerce_products WHERE source=?")
+      .all(source) as Array<{id:string;stock:number|null}>;
+    return new Map(rows.map(item=>[item.id,item.stock]));
+  }
+
+  /** Somente após COMMIT e opt-in do catálogo. Falha de regra não desfaz sincronização. */
+  private notifyInventoryChanges(items:readonly {id:string;sku:string;stock:number|null}[],
+    previous:ReadonlyMap<string,number|null>):void {
+    if(!this.commerceStatus().enabled)return;
+    const automation=new AutomationStore(this.db);
+    for(const item of items){
+      if(previous.has(item.id)&&previous.get(item.id)===item.stock)continue;
+      try{
+        automation.evaluateEvent({phone:"",message:"",eventType:"commerce.inventory_updated",
+          businessId:"default",channelId:"internal:commerce",commerceSku:item.sku,
+          ...(item.stock===null?{}:{commerceStock:item.stock})});
+      }catch(error){
+        // Evento pós-commit deve ser isolado da importação já concluída.
+        console.error("Falha em regra de evento de estoque",error instanceof Error?error.message:"erro");
+      }
+    }
+  }
+
+  syncIntegration(raw:unknown){
+    const {products,orders}=commerceSync.parse(raw);
+    if(new Set(products.map(p=>p.id)).size!==products.length)throw new Error("IDs de produtos duplicados.");
+    if(new Set(orders.map(o=>o.id)).size!==orders.length)throw new Error("IDs de pedidos duplicados.");
+    const now=new Date().toISOString();
+    const previous=this.stockSnapshot("integration");
+    this.db.exec("BEGIN IMMEDIATE");
+    try{
+      // Snapshot dos produtos importados: substitui apenas a origem de integração.
+      this.db.prepare("DELETE FROM business_commerce_products WHERE source='integration'").run();
+      const insert=this.db.prepare("INSERT INTO business_commerce_products(id,source,name,sku,price,stock,synced_at) VALUES(?,'integration',?,?,?,?,?)");
+      for(const product of products)insert.run("integration:"+product.id,product.name,product.sku,product.price,product.stock,now);
+      const upsert=this.db.prepare(`INSERT INTO business_commerce_orders(id,source,order_number,financial_status,fulfillment_status,total,created_at,synced_at)
+        VALUES(?,'integration',?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET order_number=excluded.order_number,financial_status=excluded.financial_status,
+        fulfillment_status=excluded.fulfillment_status,total=excluded.total,created_at=excluded.created_at,synced_at=excluded.synced_at`);
+      for(const order of orders)upsert.run("integration:"+order.id,order.number,order.financialStatus,order.fulfillmentStatus,order.total,order.createdAt,now);
+      this.db.prepare("UPDATE business_commerce_integrations SET last_sync_at=? WHERE id=1").run(now);
+      this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+    this.notifyInventoryChanges(products.map(item=>({...item,id:"integration:"+item.id})),previous);
+    return {products:products.length,orders:orders.length,syncedAt:now};
   }
 
   importCatalog(input: unknown) {
@@ -75,19 +292,43 @@ export class BusinessStudioStore {
       unique.add(item.id);
     }
     const now=new Date().toISOString();
+    const previous=this.stockSnapshot("manual");
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const stmt=this.db.prepare("INSERT INTO business_commerce_products(id,source,name,sku,price,stock,synced_at) VALUES(?,'manual',?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET source='manual',name=excluded.name,sku=excluded.sku,price=excluded.price,stock=excluded.stock,synced_at=excluded.synced_at");
       for(const item of items) stmt.run("manual:"+item.id,item.name,item.sku,item.price,item.stock,now);
       this.db.exec("COMMIT");
     } catch(error) {this.db.exec("ROLLBACK");throw error;}
+    this.notifyInventoryChanges(items.map(item=>({...item,id:"manual:"+item.id})),previous);
     return {imported:items.length,at:now};
   }
   getCatalog(limit=100): CommerceProduct[] {
     const rows=this.db.prepare("SELECT id,source,name,sku,price,stock,synced_at FROM business_commerce_products ORDER BY name,id LIMIT ?")
-      .all(limit) as Array<{id:string;source:"manual"|"shopify";name:string;sku:string;price:string;stock:number|null;synced_at:string}>;
+      .all(limit) as Array<{id:string;source:"manual"|"shopify"|"integration";name:string;sku:string;price:string;stock:number|null;synced_at:string}>;
     return rows.map(row=>({id:row.id,source:row.source,name:row.name,sku:row.sku,price:row.price,stock:row.stock,syncedAt:row.synced_at}));
   }
+  /** Busca em FTS5 apenas no catálogo publicado/ativado. Indexado por gatilhos SQLite. */
+  searchCatalog(question:string,limit=5):CommerceProduct[] {
+    if(!this.commerceStatus().enabled)return [];
+    const stop=new Set(["voce","voces","tem","quero","queria","saber","qual","quanto","custa",
+      "preco","valor","item","produto","disponivel","estoque","para","com","uma","uns","das","dos",
+      "que","pode","meu","sua","seu","esse","essa","ele","ela","por","favor"]);
+    const tokens=(question.normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .toLowerCase().match(/[a-z0-9]+/g)??[])
+      .filter(token=>token.length>=2&&!stop.has(token)).slice(0,8);
+    if(tokens.length===0)return [];
+    const fts=tokens.map(token=>'"'+token+'"*').join(" OR ");
+    const rows=this.db.prepare(`SELECT p.id,p.source,p.name,p.sku,p.price,p.stock,p.synced_at
+      FROM business_commerce_fts
+      JOIN business_commerce_products p ON p.rowid=business_commerce_fts.rowid
+      WHERE business_commerce_fts MATCH ?
+      ORDER BY bm25(business_commerce_fts),p.id LIMIT ?`)
+      .all(fts,Math.min(Math.max(1,limit),20)) as
+      Array<{id:string;source:"manual"|"shopify"|"integration";name:string;sku:string;price:string;stock:number|null;synced_at:string}>;
+    return rows.map(row=>({id:row.id,source:row.source,name:row.name,sku:row.sku,
+      price:row.price,stock:row.stock,syncedAt:row.synced_at}));
+  }
+
   getOrders() {
     return (this.db.prepare("SELECT id,order_number,financial_status,fulfillment_status,total,created_at,synced_at FROM business_commerce_orders ORDER BY created_at DESC LIMIT 50")
       .all() as Array<{id:string;order_number:string;financial_status:string;fulfillment_status:string;total:string;created_at:string;synced_at:string}>)
@@ -106,9 +347,24 @@ export class BusinessStudioStore {
     return this.commerceStatus();
   }
   /** A IA só vê os produtos se o administrador ativou a fonte. Pedidos nunca entram no prompt. */
+  /** Fonte comercial opt-in e canônica: ERP próprio prevalece sobre conectores e planilhas. */
+  activeCatalog(limit=2500):CommerceProduct[]{
+    const status=this.db.prepare("SELECT enabled FROM business_commerce_state WHERE id=1").get() as {enabled:number}|undefined;
+    if(!status?.enabled)return [];
+    const rank:Record<CommerceProduct["source"],number>={integration:0,shopify:1,manual:2};
+    const rows=this.getCatalog(limit).sort((a,b)=>rank[a.source]-rank[b.source]);
+    const unique=new Set<string>();
+    return rows.filter(row=>{
+      const key=(row.sku.trim()?row.sku:row.name).normalize("NFD")
+        .replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+      if(unique.has(key))return false;
+      unique.add(key);
+      return true;
+    });
+  }
   activeCommerceContext(): string {
-    if(!this.commerceStatus().enabled) return "";
-    const rows=this.getCatalog(250);
+    const rows=this.activeCatalog(250);
+    if(!rows.length)return "";
     return ["CATÁLOGO COMPLEMENTAR (última sincronização, não é estoque em tempo real):",
       ...rows.map(p=>"- "+p.name+" | SKU "+p.sku+" | Preço "+(p.price||"não informado")+" | Saldo "+(p.stock??"desconhecido")+" | Atualizado "+p.syncedAt),
       "Não garanta disponibilidade ou entrega sem confirmação. Nunca cite dados de pedidos de outros clientes."].join("\n");
@@ -136,6 +392,7 @@ export class BusinessStudioStore {
     const products=productData.products.edges.flatMap(({node})=>node.variants.edges.map(({node:variant})=>({
       id:"shopify:"+variant.id,name:node.title,sku:variant.sku??"",price:variant.price,stock:variant.inventoryQuantity,
     })));
+    const previous=this.stockSnapshot("shopify");
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const insertProduct=this.db.prepare("INSERT INTO business_commerce_products(id,source,name,sku,price,stock,synced_at) VALUES(?,'shopify',?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,price=excluded.price,stock=excluded.stock,synced_at=excluded.synced_at");
@@ -145,6 +402,7 @@ export class BusinessStudioStore {
         node.totalPriceSet.shopMoney.amount+" "+node.totalPriceSet.shopMoney.currencyCode,node.createdAt,now);
       this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
+    this.notifyInventoryChanges(products,previous);
     return {products:products.length,orders:orderData.orders.edges.length,at:now,limitedTo:50};
   }
 }

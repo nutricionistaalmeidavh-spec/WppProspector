@@ -31,7 +31,13 @@ export class ProspectingReplyTracker implements ConversationRepositoryPort {
       if (!hasInbound) return;
 
       const lead = await this.leads.findByPhone(conversation.leadPhone);
-      if (lead?.prospectingState === "sent") {
+      // Inbound espontâneo cria apenas o registro mínimo canônico, nunca prospecção.
+      // O operador pode completar o cadastro pela conversa, sem duplicar o telefone.
+      if (!lead) {
+        await this.leads.upsert({ phone: conversation.leadPhone, source: "whatsapp_inbound" });
+        return;
+      }
+      if (lead.prospectingState === "sent") {
         await this.leads.markReplied(conversation.leadPhone, this.clock());
       }
     } catch (error) {

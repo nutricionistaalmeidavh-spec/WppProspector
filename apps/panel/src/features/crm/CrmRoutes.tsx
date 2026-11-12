@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Building2, CalendarClock, ChevronRight, CircleDollarSign, Search, UserRound } from "lucide-react";
+import { ArrowRight, Building2, CalendarClock, ChevronRight, CircleDollarSign, MessageCircle, Search, UserRound, X } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { FeatureAvailability } from "@/components/FeatureAvailability";
 import { PageHeader } from "@/components/PageHeader";
@@ -13,6 +13,7 @@ import { getCrmRepository } from "./repository";
 import { CompanyEditor, OpportunityCreateForm, OpportunityEditor } from "./CrmActions";
 import { apiFetch } from "@/api/client";
 import { useCrmRuntime, type CrmModules } from "./runtime";
+import { ConversationDetailPanel } from "@/features/conversations/ConversationDetailRoute";
 import { OPPORTUNITY_STAGES, OPPORTUNITY_STAGE_LABEL, type Opportunity, type OpportunityStage } from "./types";
 
 function useCrmModule(module: keyof CrmModules) {
@@ -40,16 +41,25 @@ function stageTone(stage: OpportunityStage): "neutral" | "info" | "success" | "w
   return "neutral";
 }
 
-function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
+function OpportunityCard({ opportunity, onOpenConversation }: { opportunity: Opportunity; onOpenConversation: (phone: string) => void }) {
   return (
-    <Link to={`/crm/opportunities/${opportunity.id}`} draggable onDragStart={event=>{event.dataTransfer.setData("text/plain",opportunity.id);event.dataTransfer.effectAllowed="move";}} className="block rounded-xl border bg-card p-3.5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md">
+    <div draggable onDragStart={event=>{event.dataTransfer.setData("text/plain",opportunity.id);event.dataTransfer.effectAllowed="move";}}
+      className="rounded-xl border bg-card p-3.5 shadow-sm transition hover:border-primary/30 hover:shadow-md">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0"><p className="truncate text-sm font-semibold">{opportunity.companyName}</p><p className="mt-0.5 truncate text-xs text-muted-foreground">{opportunity.title}</p></div>
+        <Link to={`/crm/opportunities/${opportunity.id}`} className="min-w-0 flex-1 hover:underline">
+          <p className="truncate text-sm font-semibold">{opportunity.companyName}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{opportunity.title}</p>
+        </Link>
         {opportunity.awaitingHuman ? <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Aguardando humano" /> : null}
+        <button type="button" aria-label={`Abrir conversa de ${opportunity.leadName}`}
+          title="Abrir conversa sem sair do Kanban" className="rounded-md border p-1.5 hover:bg-muted"
+          onClick={()=>onOpenConversation(opportunity.leadPhone)}>
+          <MessageCircle className="h-4 w-4" />
+        </button>
       </div>
       <div className="mt-3 flex items-center justify-between text-xs"><span className="font-semibold">{formatBrl(opportunity.estimatedValue)}</span><span className="text-muted-foreground">{opportunity.owner}</span></div>
       <div className="mt-3 border-t pt-2.5 text-[11px] text-muted-foreground"><span className="line-clamp-1">Próxima: {opportunity.nextAction}</span></div>
-    </Link>
+    </div>
   );
 }
 
@@ -57,6 +67,7 @@ export function PipelineRoute() {
   const crm = useCrmModule("opportunities");
   const client = useQueryClient();
   const [moving,setMoving] = useState<string|null>(null);
+  const [chatPhone,setChatPhone] = useState<string|null>(null);
   const [moveError,setMoveError] = useState("");
   const query = useQuery({ queryKey: ["crm", crm.source, "opportunities"], queryFn: () => crm.repository.listOpportunities(), enabled: crm.supported, staleTime: Infinity });
   async function moveOpportunity(id:string,stage:OpportunityStage){
@@ -92,7 +103,7 @@ export function PipelineRoute() {
                     </div>
                     <div className="space-y-2">{items.length > 0 ? items.map((item) => (
                       <div key={item.id} className="space-y-1">
-                        <OpportunityCard opportunity={item} />
+                        <OpportunityCard opportunity={item} onOpenConversation={setChatPhone} />
                         <label className="block text-[11px] text-muted-foreground">
                           <span className="sr-only">Mover etapa de {item.title}</span>
                           <select aria-label={"Mover etapa de "+item.title} value={item.stage}
@@ -111,6 +122,22 @@ export function PipelineRoute() {
           </div>
         )}
       </FeatureAvailability>
+      {chatPhone ? <div className="fixed inset-0 z-50">
+        <button aria-label="Fechar conversa" onClick={()=>setChatPhone(null)}
+          className="absolute inset-0 w-full bg-black/45" />
+        <section role="dialog" aria-modal="true" aria-label="Conversa do WhatsApp"
+          onKeyDown={e=>{if(e.key==="Escape")setChatPhone(null);}}
+          className="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col border-l bg-background shadow-xl">
+          <div className="flex items-center justify-between border-b p-4">
+            <p className="font-semibold">Atendimento WhatsApp</p>
+            <button type="button" aria-label="Fechar painel de conversa" className="rounded-md border p-2"
+              onClick={()=>setChatPhone(null)}><X className="h-4 w-4" /></button>
+          </div>
+          <div className="app-scrollbar flex-1 overflow-y-auto p-4">
+            <ConversationDetailPanel leadPhone={chatPhone} />
+          </div>
+        </section>
+      </div> : null}
     </div>
   );
 }
@@ -172,10 +199,22 @@ function OpportunityDetail({ opportunity }: { opportunity: Opportunity }) {
       <PageHeader eyebrow="Oportunidade" title={opportunity.companyName} description={`${opportunity.title} · ${opportunity.leadName}`} actions={<StatusPill tone={stageTone(opportunity.stage)}>{OPPORTUNITY_STAGE_LABEL[opportunity.stage]}</StatusPill>} />
       <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
         <Card className="shadow-sm"><CardHeader><CardTitle className="text-base">Histórico comercial</CardTitle></CardHeader><CardContent><div className="relative space-y-5 before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-border">{timeline.map((event) => <div key={event.label} className="relative flex gap-4"><span className="relative z-10 mt-1.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 border-primary bg-background" /><div><p className="text-sm font-medium">{event.label}</p><p className="mt-0.5 text-sm text-muted-foreground">{event.detail}</p></div></div>)}</div></CardContent></Card>
-        <div className="space-y-4"><OpportunityEditor opportunity={opportunity}/><Card className="h-fit shadow-sm"><CardHeader><CardTitle className="text-base">Contexto</CardTitle></CardHeader><CardContent className="space-y-4 text-sm"><DetailRow icon={CircleDollarSign} label="Valor estimado" value={formatBrl(opportunity.estimatedValue)} /><DetailRow icon={UserRound} label="Responsável" value={opportunity.owner} /><DetailRow icon={CalendarClock} label="Próxima ação" value={opportunity.nextAction} /><DetailRow icon={Building2} label="Empresa" value={opportunity.companyName} />{opportunity.campaignName ? <DetailRow icon={ArrowRight} label="Campanha" value={opportunity.campaignName} /> : null}<div className="pt-2"><Link to={`/conversations/${encodeURIComponent(opportunity.leadPhone)}`} className="inline-flex w-full items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Abrir conversa</Link></div></CardContent></Card></div>
+        <div className="space-y-4"><OpportunityEditor opportunity={opportunity}/><Card className="h-fit shadow-sm"><CardHeader><CardTitle className="text-base">Contexto</CardTitle></CardHeader><CardContent className="space-y-4 text-sm"><DetailRow icon={CircleDollarSign} label="Valor estimado" value={formatBrl(opportunity.estimatedValue)} /><DetailRow icon={UserRound} label="Responsável" value={opportunity.owner} /><DetailRow icon={CalendarClock} label="Próxima ação" value={opportunity.nextAction} /><DetailRow icon={Building2} label="Empresa" value={opportunity.companyName} />{opportunity.campaignName ? <DetailRow icon={ArrowRight} label="Campanha" value={opportunity.campaignName} /> : null}<div className="pt-2"><Link to={`/conversations/${encodeURIComponent(opportunity.leadPhone)}`} className="inline-flex w-full items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Abrir conversa</Link><OpportunityConversations id={opportunity.id} primary={opportunity.leadPhone} /></div></CardContent></Card></div>
       </div>
     </div>
   );
+}
+
+function OpportunityConversations({id,primary}:{id:string;primary:string}) {
+  const query=useQuery({queryKey:["crm","opportunity-conversations",id],
+    queryFn:()=>apiFetch<{items:string[]}>("/crm/opportunities/"+encodeURIComponent(id)+"/conversations")});
+  const additional=(query.data?.items??[]).filter(phone=>phone!==primary);
+  if(!additional.length)return null;
+  return <div className="mt-3 space-y-1 border-t pt-3">
+    <p className="text-xs font-semibold">Outras conversas vinculadas</p>
+    {additional.map(phone=><Link key={phone} className="block text-xs text-primary hover:underline"
+      to={`/conversations/${encodeURIComponent(phone)}`}>{phone}</Link>)}
+  </div>;
 }
 
 function DetailRow({ icon: Icon, label, value }: { icon: typeof Building2; label: string; value: string }) {

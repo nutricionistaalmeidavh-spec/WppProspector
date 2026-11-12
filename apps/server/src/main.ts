@@ -38,6 +38,7 @@ import { DurableWhatsappGateway } from "./whatsapp-connectivity/infrastructure/g
 import { SqliteConsentStore } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
 import { SqliteOutbox } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-outbox.ts";
 import { SqliteInboundJournal } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-inbound-journal.ts";
+import { WhatsappContactsStore } from "./whatsapp-connectivity/infrastructure/persistence/whatsapp-contacts-store.ts";
 import { optOutRequested } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-consent-store.ts";
 import { NoopMessagingCostRecorder } from "./whatsapp-connectivity/infrastructure/persistence/noop-messaging-cost-recorder.ts";
 import { SqliteMessagingCostRecorder } from "./whatsapp-connectivity/infrastructure/persistence/sqlite-messaging-cost-recorder.ts";
@@ -45,7 +46,7 @@ import { buildFastifyServer } from "./whatsapp-connectivity/infrastructure/http/
 import { ConsoleLogger } from "./whatsapp-connectivity/infrastructure/logging/console-logger.ts";
 import { AutomationStore } from "./automation/automation-store.ts";
 import { CrmStore } from "./crm/crm-store.ts";
-import {registerArtisysCommerceInboundRoutes} from './integrations/artisys-commerce.routes.ts';
+import {registerArtisysCommerceInboundRoutes} from "./integrations/artisys-commerce.routes.ts";
 import { FollowupScheduler } from "./automation/followup-scheduler.ts";
 import { OutboundTextMessage } from "./whatsapp-connectivity/domain/outbound-text-message.ts";
 
@@ -112,13 +113,15 @@ function localEncryptionKey(): string {
   }
 }
 const businessAiStore = new BusinessAiStore(database, localEncryptionKey());
-const llmClient = new ConfigurableBusinessLlm(businessAiStore);
+const studioContext = new BusinessStudioStore(database, businessAiStore);
+const llmClient = new ConfigurableBusinessLlm(businessAiStore,()=>studioContext.activeCatalog(),question=>studioContext.searchCatalog(question));
 
 // O núcleo funciona sem Meta/Anthropic; ambos permanecem como opt-ins.
 const consentStore = new SqliteConsentStore(database);
 const outbox = new SqliteOutbox(database);
 const inboundJournal = new SqliteInboundJournal(database);
-const automationStore = new AutomationStore(database);
+const contactDirectory = new WhatsappContactsStore(database);
+const automationStore = new AutomationStore(database,undefined,()=>connections.activeChannelKey());
 const crmStore = new CrmStore(database);
 // O core permanece local/gratuito. Canais oficiais são um opt-in criptografado.
 const channelStore = env.WHATSAPP_CREDENTIALS_KEY
@@ -145,7 +148,6 @@ const usageRecorder = conversationEnv.LLM_USAGE_TRACKING_ENABLED
   ? new SqliteUsageRecorder(database, logger)
   : new NoopUsageRecorder();
 
-const studioContext = new BusinessStudioStore(database, businessAiStore);
 const businessContextProvider = new MerchantBusinessContext(businessAiStore, () => studioContext.activeCommerceContext());
 
 // API de gestão (/admin): quando ligada, o repositório de conversas é embrulhado
@@ -177,7 +179,7 @@ if (adminConfig) {
   );
 }
 
-const replySender = new ReplySenderAdapter({ sendTextMessage, logger });
+const replySender = new ReplySenderAdapter({ sendTextMessage, logger, retryOnFailure:false });
 
 // Conexão única do armazenamento SQL embutido. Consumida pelo `SqliteUsageRecorder`
 // (consumo de LLM) e exposta para os adapters das próximas changes (consumo de
@@ -185,7 +187,7 @@ const replySender = new ReplySenderAdapter({ sendTextMessage, logger });
 export { database };
 
 const generateReply = new GenerateReplyUseCase({
-  automation: automationStore,
+  automation: { evaluate: (phone,text) => automationStore.evaluate(phone,text,{channelId:connections.activeChannelKey()}) },
   repository: conversationRepository,
   replyStrategy,
   llmClient,
@@ -244,7 +246,8 @@ const handleMessageStatusUpdate = new HandleMessageStatusUpdateUseCase(
 );
 
 const followupScheduler = new FollowupScheduler(automationStore, consentStore,
-  async ({ to, body }) => connections.sendTextMessage(OutboundTextMessage.create({ to, body })));
+  async ({ to, body, operationId }) =>
+    gateway.sendTextWithOperationId(OutboundTextMessage.create({ to, body }),operationId));
 
 export const app = buildFastifyServer({
   webhook: env.META_WEBHOOK_VERIFY_TOKEN && env.META_APP_SECRET && (env.WHATSAPP_PROVIDER === "meta" || embeddedMetaSignup) ? {
@@ -280,7 +283,7 @@ export const app = buildFastifyServer({
     : undefined,
 });
 
-// Comércio externo é opt-in. Não altera a identidade canônica dos leads ou o WhatsApp.
+// Venda externa opcional: preserva leads.phone, conversas e integrações WhatsApp.
 if(process.env.ARTISYS_COMMERCE_INBOUND_SECRET){
   app.register(registerArtisysCommerceInboundRoutes,{
     db:database,secret:process.env.ARTISYS_COMMERCE_INBOUND_SECRET
@@ -312,6 +315,15 @@ if (isMainModule) {
         handleInboundMessage.execute(message);
         void acknowledgeInbound(message.id).catch((error: unknown) =>
           logger.error("Falha ao confirmar evento Baileys", { error: String(error) }));
+      },
+      contacts(contacts) {
+        try {
+          for (let index=0;index<contacts.length;index+=2000)
+            contactDirectory.upsertMany(contacts.slice(index,index+2000), "baileys");
+        }
+        catch (error) { logger.warn("Falha na sincronização local de contatos", {
+          error: error instanceof Error ? error.message : String(error),
+        }); }
       },
     }).catch((error: unknown) => {
       logger.error("Gateway WhatsApp local indisponível; CRM permanece acessível", {

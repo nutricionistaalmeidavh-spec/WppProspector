@@ -44,4 +44,20 @@ describe("AutomationStore", () => {
     expect(store.listRules()).toHaveLength(0);
     db.close();
   });
+  it("isola menus pelo canal e registra execução sem conteúdo das mensagens",()=>{
+    const db=openDatabase(":memory:");
+    try{
+      const store=new AutomationStore(db);
+      store.saveRule({name:"Menu seguro",match:"equals",trigger:"menu",action:"menu",
+        response:"Escolha",options:[{key:"1",label:"Atendimento",response:"Suporte",handoff:false}],
+        enabled:true,priority:1});
+      store.evaluate("+5516999999999","menu",{channelId:"canal-a"});
+      expect(store.evaluate("+5516999999999","1",{channelId:"canal-b"})).toBeNull();
+      expect(store.evaluate("+5516999999999","1",{channelId:"canal-a"})?.replyMessages).toEqual(["Suporte"]);
+      const audit=store.recentExecutions();
+      expect(audit).toHaveLength(2);
+      expect(JSON.stringify(audit)).not.toContain("+5516999999999");
+      expect(JSON.stringify(audit)).not.toContain("Suporte");
+    }finally{db.close();}
+  });
 });

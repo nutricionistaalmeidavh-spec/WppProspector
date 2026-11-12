@@ -1,5 +1,6 @@
 import cookie from "@fastify/cookie";
 import { BusinessAiStore } from "../../../business/business-ai-store.ts";
+import { registerOnboardingRoutes } from "../../../onboarding/onboarding.routes.ts";
 import { registerBusinessSettingsRoutes } from "../../../business/business-settings.routes.ts";
 import type { FastifyPluginAsync } from "fastify";
 import type { DatabaseSync } from "node:sqlite";
@@ -32,11 +33,13 @@ import { createAdminSessionGuard } from "./session-guard.ts";
 import type { AutomationStore } from "../../../automation/automation-store.ts";
 import { registerAutomationRoutes } from "../../../automation/automation.routes.ts";
 import { CrmStore } from "../../../crm/crm-store.ts";
-import {listArtisysCommerceSales} from '../../../integrations/artisys-commerce.routes.ts';
+import {listArtisysCommerceSales} from "../../../integrations/artisys-commerce.routes.ts";
 import { registerCrmRoutes } from "../../../crm/crm-routes.ts";
 import { TeamStore } from "../../../team/team-store.ts";
 import { registerTeamRoutes } from "../../../team/team.routes.ts";
 import { registerWhatsAppConnectionsRoutes } from "../../../whatsapp-connectivity/infrastructure/http/routes/whatsapp-connections.routes.ts";
+import { registerWhatsAppContactsRoutes } from "../../../whatsapp-connectivity/infrastructure/http/routes/whatsapp-contacts.routes.ts";
+import { WhatsappContactsStore } from "../../../whatsapp-connectivity/infrastructure/persistence/whatsapp-contacts-store.ts";
 import type { WhatsAppConnectionManager } from "../../../whatsapp-connectivity/infrastructure/gateways/whatsapp-connection-manager.ts";
 import type { MetaEmbeddedSignup } from "../../../whatsapp-connectivity/infrastructure/gateways/meta-embedded-signup.ts";
 
@@ -145,8 +148,19 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   });
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
   await app.register(registerBusinessSettingsRoutes, { db: deps.db, store: deps.businessAiStore ?? new BusinessAiStore(deps.db), sessionSecret: deps.config.sessionSecret, clock });
-  await app.register(registerCrmRoutes, { store: new CrmStore(deps.db),prospectLead,prospectingEnabled:prospectingAllowed });
-  app.get('/api/crm/external-sales',async()=>({items:listArtisysCommerceSales(deps.db)}));
+  await app.register(registerCrmRoutes, {
+    store:new CrmStore(deps.db),prospectLead,prospectingEnabled:prospectingAllowed,
+    onOpportunityUpdated: opportunity=>deps.automation?.evaluateEvent({
+      phone:opportunity.leadPhone,message:"",eventType:"crm.opportunity_updated",
+      businessId:"default",channelId:deps.whatsappConnections?.activeChannelKey()??"default",
+      crmStage:opportunity.stage,crmOpportunityId:opportunity.id,
+    }),
+  });
+  app.get("/api/crm/external-sales",async()=>({items:listArtisysCommerceSales(deps.db)}));
+  await app.register(registerOnboardingRoutes, { db: deps.db, sessionSecret: deps.config.sessionSecret, clock });
+  await app.register(registerWhatsAppContactsRoutes, {
+    store: new WhatsappContactsStore(deps.db, clock), leads: deps.leads,
+  });
   await app.register(registerTeamRoutes,{store:team});
   if (deps.consent) await app.register(registerConsentRoutes, { consent: deps.consent });
   if (deps.automation && deps.consent) await app.register(registerAutomationRoutes, {

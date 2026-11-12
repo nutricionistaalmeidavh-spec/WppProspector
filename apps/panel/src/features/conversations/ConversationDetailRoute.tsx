@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import type { ConversationDetail } from "@/api/contracts";
 import { ConversationActions } from "@/features/actions/ConversationActions";
+import { ConversationCrmPanel } from "./ConversationCrmPanel";
 import { formatDateTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -92,6 +93,7 @@ export function ConversationDetailPanel({
       </dl>
 
       <ConversationActions leadPhone={detail.leadPhone} state={detail.state} />
+      <ConversationCrmPanel leadPhone={detail.leadPhone} />
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">Linha do tempo</h2>

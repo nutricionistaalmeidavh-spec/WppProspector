@@ -20,6 +20,7 @@ type BaileysModule = {
 
 export interface LocalInbound {
   execute(message: { from: string; id: string; timestamp: string; type: "text"; text: { body: string } }): void;
+  contacts?(contacts: Array<{phone: string; displayName: string}>): void;
 }
 
 /**
@@ -93,6 +94,23 @@ export class BaileysGateway implements WhatsAppGatewayPort {
         const loggedOut = update.lastDisconnect?.error?.output?.statusCode === lib.DisconnectReason.loggedOut;
         if (!loggedOut && this.shouldReconnect) this.reconnect();
       }
+    });
+    // Sincronização incremental e snapshot inicial; a agenda não cria leads nem envia mensagens.
+    type Contact = { id?: string; name?: string | null; notify?: string | null; verifiedName?: string | null };
+    const forwardContacts = (contacts: Contact[] | undefined) => {
+      if (this.sock !== sock || !contacts?.length) return;
+      const clean = contacts.flatMap(contact => {
+        const jid = contact.id ?? "";
+        if (!/^\d+@s\.whatsapp\.net$/.test(jid)) return [];
+        return [{ phone: "+" + jid.split("@")[0],
+          displayName: (contact.name ?? contact.notify ?? contact.verifiedName ?? "").trim() }];
+      });
+      if (clean.length) this.inbound?.contacts?.(clean);
+    };
+    sock.ev.on("contacts.upsert", (raw: unknown) => forwardContacts(raw as Contact[]));
+    sock.ev.on("contacts.update", (raw: unknown) => forwardContacts(raw as Contact[]));
+    sock.ev.on("messaging-history.set", (raw: unknown) => {
+      forwardContacts((raw as { contacts?: Contact[] })?.contacts);
     });
     sock.ev.on("messages.upsert", (raw: unknown) => {
       const batch = raw as { type?: string; messages?: Msg[] };
