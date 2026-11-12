@@ -6,6 +6,7 @@ import { SESSION_COOKIE_NAME } from "../management/infrastructure/http/session-g
 import type { BusinessAiStore } from "./business-ai-store.ts";
 import { BusinessStudioStore, StudioValidationError } from "./business-studio-store.ts";
 import { LocalRulesLlmClient } from "../conversation-engine/infrastructure/llm/local-rules-llm-client.ts";
+import { LocalSemanticCatalogSearch } from "./local-semantic-catalog.ts";
 import { OpenAiChatClient } from "./openai-chat-client.ts";
 import { AnthropicLlmClient } from "../conversation-engine/infrastructure/llm/anthropic-llm-client.ts";
 
@@ -102,7 +103,15 @@ export const registerBusinessStudioRoutes:FastifyPluginAsync<Deps> = async(app,d
     const business=studio.getDraft().profile;
     const engine=deps.store.getPreviewAi();
     if(engine.provider==="rules"||!allowExternal){
-      const response=await new LocalRulesLlmClient(()=>business,()=>studio.activeCatalog(),question=>studio.searchCatalog(question)).generate({
+      const semantic=new LocalSemanticCatalogSearch(
+        ()=>business.semanticSearch,
+        ()=>[...studio.activeCatalog(),...business.products.map(item=>({
+          name:item.name,sku:"",price:item.price,stock:null,syncedAt:"draft",
+        }))],
+        requestFetch,
+      );
+      const response=await new LocalRulesLlmClient(()=>business,()=>studio.activeCatalog(),
+        question=>studio.searchCatalog(question),question=>semantic.search(question)).generate({
         system:"Atendimento de simulação",messages:[{role:"user",content:message}],maxTokens:300,model:"local-rules",
       });
       const output=JSON.parse(response.text) as {replyMessages:string[];handoffToHuman:boolean};
