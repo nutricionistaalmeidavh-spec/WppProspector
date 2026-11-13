@@ -218,7 +218,7 @@ export class CrmStore {
         if(!nextStage)throw new Error("O funil não possui a etapa comercial correspondente.");
         this.db.prepare("UPDATE crm_opportunities SET pipeline_stage_id=? WHERE id=?").run(nextStage.id,id);
         this.db.prepare("INSERT INTO crm_pipeline_events(id,opportunity_id,from_pipeline_id,from_stage_id,to_pipeline_id,to_stage_id,occurred_at) VALUES(?,?,?,?,?,?,?)")
-          .run(randomUUID(),id,pipelineId,old.pipeline_stage_id,pipelineId,nextStage.id,at);
+          .run(randomUUID(),id,pipelineId,old.pipeline_stage_id==null?null:String(old.pipeline_stage_id),pipelineId,nextStage.id,at);
         this.db.prepare("INSERT INTO crm_stage_events(id,opportunity_id,from_stage,to_stage,occurred_at) VALUES(?,?,?,?,?)")
         .run(randomUUID(),id,old.stage as string,stage,at);
       }
