@@ -61,9 +61,9 @@ export class EngagementStore {
       as Array<{fromUserId:string|null;toUserId:string|null;actorRole:string;department:string;occurredAt:string}>);
   }
   metrics() {
-    const rows=this.db.prepare("SELECT u.id AS ownerId,u.username AS name,count(a.phone) AS assigned,coalesce(sum(CASE WHEN c.state='awaitingHuman' THEN 1 ELSE 0 END),0) AS waiting FROM crm_team_users u LEFT JOIN crm_conversation_assignments a ON a.owner_user_id=u.id LEFT JOIN conversation_index c ON c.lead_phone=a.phone WHERE u.active=1 GROUP BY u.id ORDER BY u.username").all() as Row[];
+    const rows=this.db.prepare("SELECT u.id AS ownerId,u.username AS name,count(a.phone) AS assigned,coalesce(sum(CASE WHEN c.state='awaitingHuman' THEN 1 ELSE 0 END),0) AS waiting, (SELECT count(*) FROM crm_opportunities o WHERE o.owner_user_id=u.id) AS opportunities, (SELECT count(*) FROM crm_opportunities o WHERE o.owner_user_id=u.id AND o.stage='won') AS won, (SELECT count(*) FROM crm_assignment_events e WHERE e.to_user_id=u.id AND e.from_user_id IS NOT NULL AND e.from_user_id<>u.id) AS transfersReceived FROM crm_team_users u LEFT JOIN crm_conversation_assignments a ON a.owner_user_id=u.id LEFT JOIN conversation_index c ON c.lead_phone=a.phone WHERE u.active=1 GROUP BY u.id ORDER BY u.username").all() as Row[];
     const unassigned=this.db.prepare("SELECT count(*) AS n FROM conversation_index c LEFT JOIN crm_conversation_assignments a ON a.phone=c.lead_phone WHERE a.owner_user_id IS NULL").get() as {n:number};
-    return {unassigned:unassigned.n,byAgent:rows.map(r=>({ownerId:s(r,"ownerId"),name:s(r,"name"),assigned:Number(r.assigned),waiting:Number(r.waiting)}))};
+    return {unassigned:unassigned.n,byAgent:rows.map(r=>({ownerId:s(r,"ownerId"),name:s(r,"name"),assigned:Number(r.assigned),waiting:Number(r.waiting),opportunities:Number(r.opportunities),won:Number(r.won),transfersReceived:Number(r.transfersReceived)}))};
   }
   createLabel(name:string) {
     const label=name.trim();
