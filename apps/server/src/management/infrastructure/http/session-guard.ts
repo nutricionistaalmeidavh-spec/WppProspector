@@ -59,8 +59,15 @@ export function createAdminSessionGuard(deps: {
     const allowedLead=request.method==="POST"&&apiPath==="/api/leads";
     const allowedManualMessage=request.method==="POST"&&
       /^\/api\/conversations\/[^/]+\/messages$/.test(apiPath);
+    const allowedHandoff=request.method==="POST"&&
+      /^\/api\/conversations\/[^/]+\/(?:handoff|resume)$/.test(apiPath);
+    const allowedEngagement=(request.method==="PUT"&&
+      (/^\/api\/engagement\/assignments\/[^/]+$/.test(apiPath)||
+       /^\/api\/engagement\/contacts\/[^/]+\/labels$/.test(apiPath)||
+       apiPath==="/api/engagement/values")) ||
+      (request.method==="PATCH"&&/^\/api\/engagement\/opportunities\/[^/]+\/stage$/.test(apiPath));
     const allowedOnboarding = /^\/api\/onboarding\/(?:tour|first-operation(?:\/progress)?)$/.test(apiPath);
-    if(!allowedCrm&&!allowedLead&&!allowedManualMessage&&!allowedOnboarding)
+    if(!allowedCrm&&!allowedLead&&!allowedManualMessage&&!allowedOnboarding&&!allowedHandoff&&!allowedEngagement)
       return reply.code(403).send({error:"forbidden"});
   };
 }
