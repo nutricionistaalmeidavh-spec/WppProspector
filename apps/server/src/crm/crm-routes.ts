@@ -30,6 +30,8 @@ const opportunityData=z.object({
   probabilityPercent:z.number().finite().min(0).max(100).default(0),
   lossReason:z.string().trim().max(400).default(""),
   ownerUserId:z.string().uuid().nullable().optional(),
+  pipelineId:z.union([z.string().uuid(),z.literal("default")]).optional(),
+  pipelineStageId:z.string().min(1).max(80).optional(),
 });
 // PATCH nunca deve injetar os valores padrão de POST em propriedades omitidas.
 const companyPatch=z.object({
@@ -53,6 +55,8 @@ const opportunityPatch=z.object({
   probabilityPercent:z.number().finite().min(0).max(100),
   lossReason:z.string().trim().max(400),
   ownerUserId:z.string().uuid().nullable().optional(),
+  pipelineId:z.union([z.string().uuid(),z.literal("default")]).optional(),
+  pipelineStageId:z.string().min(1).max(80).optional(),
 }).partial();
 
 const validDate=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>{
