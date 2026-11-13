@@ -12,7 +12,7 @@ type CustomField={id:string;entity:"lead"|"opportunity";name:string;kind:"text"|
 type Value={fieldId:string;name:string;kind:string;value:string};
 
 export function ConversationOpsPanel({phone}:{phone:string}){
-  const {role}=useSession();
+  const role=useOptionalSession()?.role??null;
   const cache=useQueryClient();
   const [department,setDepartment]=useState("Geral");
   const [ownerId,setOwnerId]=useState("");
