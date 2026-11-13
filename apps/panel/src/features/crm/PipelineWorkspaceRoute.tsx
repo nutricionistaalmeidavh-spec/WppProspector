@@ -63,6 +63,17 @@ export function PipelineWorkspaceRoute(){
       setRenaming("");
     },"Etapa renomeada.");
   }
+  async function transfer(item:Opportunity,targetId:string){
+    const destination=pipelines.data?.items.find(p=>p.id===targetId);
+    const equivalent=destination?.stages.find(stage=>stage.baseStage===item.stage)??destination?.stages[0];
+    if(!destination||!equivalent){setError("Funil de destino sem etapas.");return;}
+    if(!window.confirm("Transferir esta oportunidade para "+destination.name+" na etapa "+equivalent.name+"?"))return;
+    await action(async()=>{
+      await apiFetch("/engagement/opportunities/"+encodeURIComponent(item.id)+"/stage",
+        {method:"PATCH",body:{pipelineId:destination.id,stageId:equivalent.id}});
+      setPipelineId(destination.id);
+    },"Oportunidade transferida entre funis.");
+  }
   async function move(id:string,stageId:string){
     const existing=placed.get(id);
     if(!existing||existing.pipelineStageId===stageId||busy)return;
@@ -118,6 +129,12 @@ export function PipelineWorkspaceRoute(){
             <p className="truncate text-xs text-muted-foreground">{item.companyName} · {item.leadName}</p>
             <p className="text-xs font-medium">{money(item.estimatedValue)}</p>
             <div className="flex gap-2"><Button size="sm" variant="outline" onClick={()=>setChatPhone(item.leadPhone)}>Conversa</Button></div>
+            {(pipelines.data?.items.length??0)>1?<select aria-label={"Transferir "+item.title+" para outro funil"}
+              className="h-9 w-full rounded-md border bg-background px-2 text-xs"
+              value="" disabled={busy} onChange={e=>void transfer(item,e.target.value)}>
+              <option value="">Transferir para outro funil...</option>
+              {(pipelines.data?.items??[]).filter(p=>p.id!==pipelineId).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>:null}
             <select aria-label={"Mover "+item.title} className="h-9 w-full rounded-md border bg-background px-2 text-xs"
               value={stage.id} disabled={busy} onChange={e=>void move(item.id,e.target.value)}>
               {selected.stages.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
