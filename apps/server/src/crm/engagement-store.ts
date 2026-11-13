@@ -57,8 +57,7 @@ export class EngagementStore {
     return this.getAssignment(phone)!;
   }
   history(phone:string) {
-    return (this.db.prepare("SELECT from_user_id AS fromUserId,to_user_id AS toUserId,actor_role AS actorRole,department,occurred_at AS occurredAt FROM crm_assignment_events WHERE phone=? ORDER BY occurred_at,rowid").all(phone)
-      as Array<{fromUserId:string|null;toUserId:string|null;actorRole:string;department:string;occurredAt:string}>);
+    return (this.db.prepare("SELECT from_user_id AS fromUserId,to_user_id AS toUserId,actor_role AS actorRole,department,occurred_at AS occurredAt FROM crm_assignment_events WHERE phone=? ORDER BY occurred_at,rowid").all(phone) as Array<{fromUserId:string|null;toUserId:string|null;actorRole:string;department:string;occurredAt:string}>);
   }
   metrics() {
     const rows=this.db.prepare("SELECT u.id AS ownerId,u.username AS name,count(a.phone) AS assigned,coalesce(sum(CASE WHEN c.state='awaitingHuman' THEN 1 ELSE 0 END),0) AS waiting, (SELECT count(*) FROM crm_opportunities o WHERE o.owner_user_id=u.id) AS opportunities, (SELECT count(*) FROM crm_opportunities o WHERE o.owner_user_id=u.id AND o.stage='won') AS won, (SELECT count(*) FROM crm_assignment_events e WHERE e.to_user_id=u.id AND e.from_user_id IS NOT NULL AND e.from_user_id<>u.id) AS transfersReceived FROM crm_team_users u LEFT JOIN crm_conversation_assignments a ON a.owner_user_id=u.id LEFT JOIN conversation_index c ON c.lead_phone=a.phone WHERE u.active=1 GROUP BY u.id ORDER BY u.username").all() as Row[];
@@ -102,8 +101,7 @@ export class EngagementStore {
     return {id,...input,name};
   }
   listFields(entity:"lead"|"opportunity") {
-    return this.db.prepare("SELECT id,entity,name,kind FROM crm_custom_fields WHERE entity=? ORDER BY name").all(entity)
-      as Array<{id:string;entity:"lead"|"opportunity";name:string;kind:"text"|"number"|"date"}>;
+    return this.db.prepare("SELECT id,entity,name,kind FROM crm_custom_fields WHERE entity=? ORDER BY name").all(entity) as Array<{id:string;entity:"lead"|"opportunity";name:string;kind:"text"|"number"|"date"}>;
   }
   private entityExists(entity:"lead"|"opportunity",id:string):boolean {
     const sql=entity==="lead"?"SELECT 1 FROM leads WHERE phone=?":"SELECT 1 FROM crm_opportunities WHERE id=?";
@@ -130,8 +128,7 @@ export class EngagementStore {
     return rows.map(r=>({id:s(r,"id"),name:s(r,"name"),isDefault:Number(r.is_default)===1,stages:this.listStages(s(r,"id"))}));
   }
   private listStages(pipelineId:string):PipelineStage[] {
-    return (this.db.prepare("SELECT id,pipeline_id AS pipelineId,name,base_stage AS baseStage,position FROM crm_pipeline_stages WHERE pipeline_id=? ORDER BY position,id").all(pipelineId)
-      as Array<{id:string;pipelineId:string;name:string;baseStage:Stage;position:number}>);
+    return (this.db.prepare("SELECT id,pipeline_id AS pipelineId,name,base_stage AS baseStage,position FROM crm_pipeline_stages WHERE pipeline_id=? ORDER BY position,id").all(pipelineId) as Array<{id:string;pipelineId:string;name:string;baseStage:Stage;position:number}>);
   }
   createPipeline(name:string):Pipeline {
     const clean=name.trim();
