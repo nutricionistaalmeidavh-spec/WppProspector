@@ -71,9 +71,17 @@ INSERT INTO crm_pipeline_stages(id,pipeline_id,name,base_stage,position) VALUES
  ('default-negotiation','default','Negociação','negotiation',6),
  ('default-won','default','Ganho','won',7),
  ('default-lost','default','Perdido','lost',8);
-ALTER TABLE crm_opportunities ADD COLUMN pipeline_id TEXT NOT NULL DEFAULT 'default' REFERENCES crm_pipelines(id);
+ALTER TABLE crm_opportunities ADD COLUMN pipeline_id TEXT REFERENCES crm_pipelines(id);
+-- SQLite não aceita REFERENCES com DEFAULT não nulo no ALTER TABLE quando há dados.
+-- Instaladores legados ganham o funil padrão pelo backfill, sem reconstrução de tabela.
+UPDATE crm_opportunities SET pipeline_id='default' WHERE pipeline_id IS NULL;
 ALTER TABLE crm_opportunities ADD COLUMN pipeline_stage_id TEXT REFERENCES crm_pipeline_stages(id);
 UPDATE crm_opportunities SET pipeline_stage_id='default-'||stage WHERE pipeline_stage_id IS NULL;
+-- Compatibilidade com inserções antigas que omitem o novo par de campos.
+CREATE TRIGGER crm_pipeline_legacy_insert AFTER INSERT ON crm_opportunities
+WHEN NEW.pipeline_id IS NULL BEGIN
+ UPDATE crm_opportunities SET pipeline_id='default',pipeline_stage_id='default-'||NEW.stage WHERE id=NEW.id;
+END;
 CREATE INDEX idx_crm_opp_pipeline ON crm_opportunities(pipeline_id,pipeline_stage_id);
 CREATE TABLE crm_pipeline_events (
  id TEXT PRIMARY KEY, opportunity_id TEXT NOT NULL REFERENCES crm_opportunities(id) ON DELETE CASCADE,
