@@ -1,12 +1,13 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, session, Menu, clipboard, dialog, shell } = require('electron');
-const { randomBytes } = require('node:crypto');
-const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs');
+const { app, BrowserWindow, ipcMain, session, Menu, clipboard, dialog, shell, safeStorage } = require('electron');
+const { randomBytes, randomUUID } = require('node:crypto');
+const { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } = require('node:fs');
 const { join } = require('node:path');
 const { spawn } = require('node:child_process');
 const { createServer } = require('node:net');
 require('node:dns').setDefaultResultOrder('ipv4first');
 const { licenseStatus } = require('./license.cjs');
+const { activateCentral, checkCentral, validateReceipt } = require('./central-license.cjs');
 const { createBootDiagnostics, verifyBundledRuntime, formatBackendFailure } = require('./boot-support.cjs');
 
 let windowRef;
@@ -17,6 +18,8 @@ const runtimeRoot = () => app.isPackaged ? join(process.resourcesPath, 'app-runt
 const dataRoot = () => join(app.getPath('userData'), 'storage');
 const licenseFile = () => join(app.getPath('userData'), 'license.json');
 const secretFile = () => join(app.getPath('userData'), 'local-access.json');
+const installationIdFile = () => join(app.getPath('userData'), 'installation-id.json');
+const centralFile = () => join(app.getPath('userData'), 'central-license.bin');
 
 function readJson(file) {
   try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; }
@@ -24,6 +27,43 @@ function readJson(file) {
 function saveJson(file, object) {
   writeFileSync(file, JSON.stringify(object, null, 2), { mode: 0o600 });
 }
+
+function getInstallationId() {
+  const previous=readJson(installationIdFile());
+  if(typeof previous?.id==='string' && /^wpp-[a-f0-9-]{36}$/.test(previous.id))return previous.id;
+  const id='wpp-'+randomUUID();
+  saveJson(installationIdFile(),{id});
+  return id;
+}
+function readCentralReceipt() {
+  if(!existsSync(centralFile())||!safeStorage.isEncryptionAvailable())return null;
+  try {
+    const record=JSON.parse(safeStorage.decryptString(readFileSync(centralFile())));
+    return validateReceipt(record,getInstallationId())?record:null;
+  }catch{return null;}
+}
+function saveCentralReceipt(receipt) {
+  if(!validateReceipt(receipt,getInstallationId()))throw Error('Dados de licença incompatíveis.');
+  if(!safeStorage.isEncryptionAvailable())throw Error('Armazenamento seguro do Windows indisponível.');
+  writeFileSync(centralFile(),safeStorage.encryptString(JSON.stringify(receipt)),{mode:0o600});
+}
+function revokeCentralReceipt() {
+  try{unlinkSync(centralFile());}catch{}
+}
+async function centralAccess() {
+  const receipt=readCentralReceipt();
+  if(!receipt)return {ok:false,reason:'not-activated'};
+  try {
+    const result=await checkCentral({installationId:receipt.installationId});
+    if(!result.active){revokeCentralReceipt();return {ok:false,reason:'revoked'};}
+    return {ok:true,kind:'commercial',expiresAt:result.expiresAt};
+  }catch{
+    // PDV/Oficina: uma instalação anteriormente ativada continua local em modo offline.
+    // Nunca usar ausência de rede para liberar uma instalação sem licença válida armazenada.
+    return {ok:true,kind:'commercial',offline:true,expiresAt:receipt.expiresAt};
+  }
+}
+
 function localCredentials() {
   const previous = readJson(secretFile());
   if (typeof previous?.access === 'string' && previous.access.length >= 32 && typeof previous?.session === 'string' && previous.session.length >= 32) return previous;
@@ -107,8 +147,10 @@ async function startCRM() {
   if (booting) return;
   booting = true;
   try {
-    const status = ensureLicense();
-    if (!status.ok) { showActivation(status.reason === 'expired' ? 'Sua licença expirou. Solicite uma renovação.' : 'Insira a licença fornecida pela ArtiSys.'); return; }
+    const central = await centralAccess();
+    if(central.reason==='revoked'){showActivation('Esta licença foi suspensa ou o computador desativado na Central. Solicite uma nova ativação.');return;}
+    const status = central.ok ? central : ensureLicense();
+    if (!status.ok) { showActivation(central.reason==='revoked' ? 'Licença suspensa ou dispositivo desativado. Solicite nova ativação à ArtiSys.' : status.reason === 'expired' ? 'Sua licença de avaliação expirou. Informe um código comercial.' : 'Informe seu e-mail e código de ativação fornecidos pela ArtiSys.'); return; }
     if (!windowRef || windowRef.isDestroyed()) {
       windowRef = createWindow();
       await windowRef.loadFile(join(__dirname, 'activation.html'), { query: { message: 'Inicializando o CRM local...' } });
@@ -176,19 +218,37 @@ async function startCRM() {
 }
 app.whenReady().then(() => {
   app.setAppUserModelId('dev.artisys.wppprospector');
-  ipcMain.handle('license:activate', async (event, code) => {
+  ipcMain.handle('license:activate', async (event, input) => {
     if (!windowRef || event.sender !== windowRef.webContents || !windowRef.webContents.getURL().startsWith('file:')) return { ok: false, message: 'Tela inválida.' };
-    const status = licenseStatus(code);
-    if (!status.ok) return { ok: false, message: status.reason === 'expired' ? 'Licença expirada.' : 'Licença inválida ou fora da validade.' };
-    saveJson(licenseFile(), { code: code.trim() });
-    setImmediate(() => { void startCRM(); });
-    return { ok: true, expiresAt: status.expiresAt };
+    const code=String(typeof input==='string'?input:input?.code||'').trim();
+    const email=String(typeof input==='object'?input?.email||'':'').trim();
+    try {
+      if(/^[0-9]{6}$/.test(code)){
+        const receipt=await activateCentral({email,code,installationId:getInstallationId()});
+        saveCentralReceipt(receipt);
+        setImmediate(() => { void startCRM(); });
+        return {ok:true,expiresAt:receipt.expiresAt};
+      }
+      const status=licenseStatus(code);
+      if(!status.ok)return {ok:false,message:status.reason==='expired'?'Licença expirada.':'Licença inválida ou fora da validade.'};
+      saveJson(licenseFile(),{code});
+      setImmediate(() => { void startCRM(); });
+      return {ok:true,expiresAt:status.expiresAt};
+    }catch(error){return {ok:false,message:String(error.message||'Falha na ativação.')}}
   });
   setInterval(() => {
-    if (backend && !ensureLicense().ok) showActivation('Sua avaliação terminou. Insira uma nova licença.');
+    if (backend && !readCentralReceipt() && !ensureLicense().ok) showActivation('Sua avaliação terminou. Insira uma nova licença.');
   }, 60_000).unref();
-  if (ensureLicense().ok) void startCRM();
-  else showActivation('Insira seu código de avaliação para continuar.');
+  setInterval(async () => {
+    const receipt=readCentralReceipt();
+    if(!backend||!receipt)return;
+    try{
+      const result=await checkCentral({installationId:receipt.installationId});
+      if(!result.active){revokeCentralReceipt();showActivation('Esta licença foi suspensa ou o computador desativado na Central ArtiSys.');}
+    }catch{ /* offline: preservar acesso local previamente ativado */ }
+  }, 15*60_000).unref();
+  if (readCentralReceipt()||ensureLicense().ok) void startCRM();
+  else showActivation('Informe o e-mail e o código de seis dígitos da Central ArtiSys.');
 });
 app.on('before-quit', () => { if (backend) backend.kill(); });
 app.on('window-all-closed', () => app.quit());

@@ -8,7 +8,7 @@ document.getElementById('activate').addEventListener('submit', async (event) => 
   button.disabled = true;
   notice.textContent = 'Verificando licença...';
   try {
-    const result = await window.artisysLicense.activate(document.getElementById('code').value.trim());
+    const result = await window.artisysLicense.activate({email:document.getElementById('email').value.trim(),code:document.getElementById('code').value.trim()});
     notice.textContent = result.ok ? 'Licença ativada. Abrindo CRM...' : result.message;
   } catch { notice.textContent = 'Não foi possível validar a licença.'; }
   finally { button.disabled = false; }

@@ -1,35 +1,36 @@
-# WppProspector CRM — versão desktop de avaliação
+# WppProspector CRM — instalador comercial Windows
 
-O instalador para Windows 64 bits encapsula o painel React, servidor Node.js 24 e SQLite no Electron. A execução é local (loopback); o cliente não precisa instalar Node ou Docker, nem receber `.env` do desenvolvedor. O banco e as credenciais de WhatsApp são guardados na pasta de dados do usuário, fora do diretório do aplicativo, e sobrevivem a atualizações e desinstalações comuns.
+O instalador Windows x64 embute painel, servidor Node.js 24 e SQLite, sem exigir que o cliente instale Node ou Docker. Banco, contatos, sessões de WhatsApp e credenciais ficam na pasta de dados local do usuário, fora do executável; atualizações preservam esse diretório.
 
-## Licenciamento
+## Central de Licenças ArtiSys
 
-A partir do instalador **0.1.3**, a ativação de avaliação também aceita um código alfanumérico de **16 caracteres**. O código do lote é criado com 80 bits de aleatoriedade, e somente seu compromisso SHA-256 fica versionado e no instalador, nunca o código aberto. A verificação é offline, sem API externa, e expira em **25/11/2026, 22:33:02 UTC (19:33:02 Brasília)**, mesmo que a instalação seja posterior. O código pode ser copiado para outra máquina; não há vinculação ao dispositivo ou revogação offline, e novas emissões exigem atualizar a lista de hashes no app e distribuir outra build. Não use códigos curtos previsíveis.
+O CRM usa o mesmo serviço do PDV ArtiSys e da Oficina: https://pdv-artisys.sistema-artisys.workers.dev/admin. O produto é WPPPROSPECTOR, independente de PDV e OFICINA.
 
-O novo mecanismo **não invalida licenças anteriores**:
+1. Na Central, selecione ArtiSys CRM WhatsApp Prospector, informe o e-mail do comprador, deixe a validade vazia para licença vitalícia e escolha a quantidade permitida de PCs (padrão 3, de 1 a 20).
+2. Gere o código de **6 dígitos**, válido por **48 horas** e **uso único**. O prazo do código não limita o prazo da licença.
+3. No instalador, o cliente informa **e-mail + código**. O CRM registra uma identidade local única, a Central verifica o limite de PCs e cria uma ativação vinculada à licença.
+4. A cada abertura e periodicamente, quando conectado, o app consulta o estado da instalação. Quando offline, uma instalação já validada continua localmente com recibo criptografado pelo Windows (Electron safeStorage/DPAPI).
+5. Para trocar de computador, o vendedor entra na mesma Central e usa **Desativar PC**, depois **Reativar instalação** para gerar um código novo. O app desativado será bloqueado assim que conseguir consultar a Central.
 
-A ativação aceita códigos `WPP1.<payload>.<assinatura>` assinados com Ed25519. **Somente a chave pública fica no repositório e no instalador.** A chave privada deve ser guardada offline pelo proprietário; não adicioná-la ao GitHub Secrets nem a qualquer pacote distribuído. Para gerar nova avaliação (14 dias):
+A Central não armazena contatos, leads, conversas ou o banco operacional. O CRM não depende de serviços pagos ou de IA para gerenciar contatos manualmente; a ativação comercial inicial usa o Worker Cloudflare existente. Sem internet e sem uma ativação prévia válida, uma nova instalação não é liberada.
 
-```sh
-node desktop/issue-license.mjs --key=/caminho/seguro/private.pem --days=14
-```
+**Limitação de segurança:** uma desativação não pode ser aplicada imediatamente a um computador que permaneça totalmente offline; ela passa a valer na próxima verificação. O limite se refere a ativações, não a usuários simultâneos ou a um banco compartilhado. Cada instalador desktop usa SQLite local, portanto instalar em três PCs **não sincroniza dados automaticamente**. O compartilhamento de dados requer um servidor local central de CRM e clientes apontando para essa mesma instância.
 
-A licença é conferida antes do servidor iniciar e novamente a cada minuto. Expirado o prazo, o CRM interrompe operações ao encerrar o processo do servidor, **sem apagar registros**. A ativação offline não impede cópias da licença entre dispositivos nem ataques de relógio/arquivos locais feitos por um usuário com controle total da máquina. Para licenças com revogação e limite por dispositivo, é necessário um serviço de validação explicitamente configurado (não incluso no core).
+## Compatibilidade com códigos anteriores
 
-## Publicação
+- Licenças curtas de avaliação de **16 caracteres** continuam aceitas e preservam o vencimento em **25/11/2026 às 19:33:02 de Brasília**.
+- Licenças offline antigas assinadas WPP1.payload.assinatura continuam aceitas, com a política de validade do formato original.
+- Não grave a chave privada de emissão em Git, GitHub Secrets, Cloudflare Worker ou instaladores.
+- O arquivo de licença antigo não é removido; novas ativações da Central são armazenadas separadamente.
 
-`.github/workflows/desktop-trial-release.yml` valida contratos, testes, smoke e assinatura, empacota em runner Windows e publica o `.exe` na Release `v0.1.5-trial` quando a main recebe alterações relevantes, publicando diretamente na Release mesmo se o serviço de artefatos do Actions estiver indisponível. Um PR só gera artefato de QA, **não publica**. A URL de instalação pode ser distribuída após o job de Release estar verde:
+## Publicação e verificação
 
-`https://github.com/nutricionistaalmeidavh-spec/WppProspector/releases/download/v0.1.5-trial/ArtiSys-WppProspector-Setup-0.1.5-x64.exe`
+A versão comercial **0.1.6** preserva o mesmo appId do desktop para atualizar por cima. O workflow .github/workflows/desktop-trial-release.yml roda testes, build do servidor, teste do runtime Windows e empacotamento NSIS. A publicação ocorre na tag v0.1.6 somente após merge na main e CI verde:
 
-A release v0.1.5 inclui o onboarding com WhatsApp manual por padrão e motor automático opcional, validado com testes e aprovação explícita. O pipeline de release agora inicia o Node distribuído em Windows limpo, valida /admin/, login local e SQLite. Falhas de boot geram um arquivo local em %APPDATA%\\artisys-wppprospector-desktop\\logs\\desktop-boot.log (ou no userData definido pelo Electron), sem incluir códigos de licença ou credenciais locais.
+https://github.com/nutricionistaalmeidavh-spec/WppProspector/releases/download/v0.1.6/ArtiSys-WppProspector-Setup-0.1.6-x64.exe
 
-O executável não possui certificado Authenticode. Não prometa ausência de alertas SmartScreen. Teste a instalação e a autenticação em Windows limpo antes de enviar a um cliente.
+O URL só estará disponível depois da publicação efetiva da release. O instalador não possui assinatura Authenticode; o Windows SmartScreen pode exibir um alerta.
 
-## WhatsApp (limitação conhecida)
+O WhatsApp via Baileys é uma integração não oficial e requer validação com conta autorizada; Meta Cloud API e provedores de IA são opcionais. As chaves de terceiros não são embutidas no instalador.
 
-Baileys é uma biblioteca open source **não oficial**. A central **Configurações > Conexões WhatsApp** exibe o QR no painel autenticado e permite selecionar/reconectar sessões. Antes de liberar o instalador a clientes, valide manualmente o pareamento e o envio/recebimento com um número autorizado. O CRM e a persistência local são testáveis com dados fictícios sem serviços externos. A Meta Cloud API e a Anthropic permanecem **opcionais**, sem tokens embutidos; a conexão oficial exige configuração privada e aprovação junto à Meta.
-
-## Garantias e limites
-
-Esta distribuição mantém a licença de código-fonte MIT e os avisos de terceiros. Uma licença de ativação regula o acesso ao pacote distribuído, mas não revoga os direitos concedidos pela licença de código-fonte. Aplicações JavaScript empacotadas não são equivalentes a código-fonte criptografado. Não distribuir bancos, históricos, tokens de sessão, arquivos `.env` ou chaves privadas em artefatos.
+O código-fonte do projeto tem licença MIT; a ativação comercial do binário distribuído não altera os direitos já concedidos pelo código-fonte MIT.

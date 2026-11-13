@@ -1,4 +1,4 @@
-name: WppProspector Windows installer (trial)
+name: WppProspector Windows installer (commercial)
 
 on:
   workflow_dispatch:
@@ -44,7 +44,7 @@ jobs:
       - name: HTTP and persistence smoke test
         run: npm run test:smoke
       - name: Verify offline trial signatures
-        run: node --test desktop/license.test.cjs desktop/boot-support.test.cjs
+        run: node --test desktop/license.test.cjs desktop/central-license.test.cjs desktop/boot-support.test.cjs
       - name: Prepare portable local runtime (no external paid APIs)
         shell: pwsh
         run: |
@@ -85,17 +85,19 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.5-trial
-          name: WppProspector CRM Windows — avaliação 0.1.5
+          tag_name: v0.1.6
+          name: WppProspector CRM Windows — 0.1.6
           target_commitish: ${{ github.sha }}
-          prerelease: true
-          make_latest: false
+          prerelease: false
+          make_latest: true
           overwrite_files: true
           files: release/*.exe
           body: |
-            Instalador de avaliação Windows x64 do WppProspector CRM.
-            Ativação offline com código de 16 caracteres ou licença assinada antiga. Código fornecido separadamente.
+            Instalador comercial Windows x64 do WppProspector CRM.
+            Ativação pela Central ArtiSys: e-mail + código de 6 dígitos, mesmo painel do PDV ArtiSys e Oficina.
+            Licença vitalícia sem expiração, com limite configurável por loja (padrão 3 PCs).
+            Códigos de avaliação anteriores de 16 caracteres e licenças assinadas antigas continuam aceitos.
             Core local, Node.js e SQLite incluídos. Sem serviços pagos obrigatórios.
-            Atualização v0.1.5: primeiro acesso guiado, WhatsApp com atendimento manual, centralização de leads e oportunidades, regras setoriais opcionais, simulação e aprovação explícita antes de respostas automáticas.
+            Atualização v0.1.6: primeiro acesso guiado, WhatsApp com atendimento manual, centralização de leads e oportunidades, regras setoriais opcionais, simulação e aprovação explícita antes de respostas automáticas.
             Corrige o diagnóstico de boot e permite configurar informações de cada loja, motor de regras e APIs opcionais (Anthropic/OpenAI).
             Ainda sem assinatura Authenticode; Windows SmartScreen poderá alertar.
