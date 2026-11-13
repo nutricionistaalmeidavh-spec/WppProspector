@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
 import { ConversationDetailPanel } from "@/features/conversations/ConversationDetailRoute";
 import { OpportunityCreateForm } from "./CrmActions";
+import { getCrmRepository } from "./repository";
 import { OPPORTUNITY_STAGES, OPPORTUNITY_STAGE_LABEL, type Opportunity, type OpportunityStage } from "./types";
 
 type Stage={id:string;pipelineId:string;name:string;baseStage:OpportunityStage;position:number};
@@ -30,10 +31,10 @@ export function PipelineWorkspaceRoute(){
   const [renameValue,setRenameValue]=useState("");
   const canConfigure=role==="admin"||role==="manager";
   const pipelines=useQuery({queryKey:["engagement","pipelines"],queryFn:()=>apiFetch<{items:Pipeline[]}>("/engagement/pipelines")});
-  const opportunities=useQuery({queryKey:["crm","http","opportunities"],queryFn:()=>apiFetch<{items:Opportunity[]}>("/crm/opportunities")});
+  const opportunities=useQuery({queryKey:["crm","http","opportunities"],queryFn:()=>getCrmRepository("http").listOpportunities()});
   const placements=useQuery({queryKey:["engagement","pipeline-placement",pipelineId],queryFn:()=>apiFetch<{items:Placement[]}>("/engagement/pipelines/"+encodeURIComponent(pipelineId)+"/opportunities")});
   const selected=pipelines.data?.items.find(p=>p.id===pipelineId);
-  const byId=useMemo(()=>new Map((opportunities.data?.items??[]).map(o=>[o.id,o])),[opportunities.data]);
+  const byId=useMemo(()=>new Map((opportunities.data??[]).map(o=>[o.id,o])),[opportunities.data]);
   const placed=useMemo(()=>new Map((placements.data?.items??[]).map(p=>[p.id,p])),[placements.data]);
   async function action(work:()=>Promise<void>,successMessage:string){
     setError("");setSuccess("");setBusy(true);
