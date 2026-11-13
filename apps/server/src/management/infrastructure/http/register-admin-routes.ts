@@ -33,6 +33,8 @@ import { createAdminSessionGuard } from "./session-guard.ts";
 import type { AutomationStore } from "../../../automation/automation-store.ts";
 import { registerAutomationRoutes } from "../../../automation/automation.routes.ts";
 import { CrmStore } from "../../../crm/crm-store.ts";
+import { EngagementStore } from "../../../crm/engagement-store.ts";
+import { registerEngagementRoutes } from "../../../crm/engagement-routes.ts";
 import {listArtisysCommerceSales} from "../../../integrations/artisys-commerce.routes.ts";
 import { registerCrmRoutes } from "../../../crm/crm-routes.ts";
 import { TeamStore } from "../../../team/team-store.ts";
@@ -148,13 +150,24 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   });
   await app.register(registerAdminStatsRoutes, { consumptionStats, queries });
   await app.register(registerBusinessSettingsRoutes, { db: deps.db, store: deps.businessAiStore ?? new BusinessAiStore(deps.db), sessionSecret: deps.config.sessionSecret, clock });
+  const crmStore = new CrmStore(deps.db);
   await app.register(registerCrmRoutes, {
-    store:new CrmStore(deps.db),prospectLead,prospectingEnabled:prospectingAllowed,
+    store:crmStore,prospectLead,prospectingEnabled:prospectingAllowed,
     onOpportunityUpdated: opportunity=>deps.automation?.evaluateEvent({
       phone:opportunity.leadPhone,message:"",eventType:"crm.opportunity_updated",
       businessId:"default",channelId:deps.whatsappConnections?.activeChannelKey()??"default",
       crmStage:opportunity.stage,crmOpportunityId:opportunity.id,
     }),
+  });
+  await app.register(registerEngagementRoutes, {
+    store:new EngagementStore(deps.db,clock),sessionSecret:deps.config.sessionSecret,clock,
+    onStageMoved:(id,stage)=>{
+      const opportunity=crmStore.getOpportunity(id);
+      if(!opportunity||opportunity.stage!==stage)return;
+      deps.automation?.evaluateEvent({phone:opportunity.leadPhone,message:"",eventType:"crm.opportunity_updated",
+        businessId:"default",channelId:deps.whatsappConnections?.activeChannelKey()??"default",
+        crmStage:opportunity.stage,crmOpportunityId:opportunity.id});
+    },
   });
   app.get("/api/crm/external-sales",async()=>({items:listArtisysCommerceSales(deps.db)}));
   await app.register(registerOnboardingRoutes, { db: deps.db, sessionSecret: deps.config.sessionSecret, clock });
