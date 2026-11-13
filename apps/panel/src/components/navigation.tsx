@@ -70,7 +70,8 @@ export function getNavigationGroups(crm: CrmModules, role:"admin"|"manager"|"age
     },
     {
       label: "Analytics",
-      items: [{ to: "/analytics/costs", label: "Custos", icon: CircleDollarSign }],
+      items: [{ to: "/analytics/costs", label: "Custos", icon: CircleDollarSign },
+        enabled(role!=="agent",{to:"/analytics/team",label:"Equipe e atendimento",icon:UsersRound})].filter(Boolean) as NavItem[],
     },
     {
       label: "",
