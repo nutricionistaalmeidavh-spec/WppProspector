@@ -24,6 +24,7 @@ export function createAdminSessionGuard(deps: {
   sessionSecret: string;
   clock?: () => Date;
   team?: TeamStore;
+  assignmentOwner?: (phone:string)=>string|null;
 }): preHandlerAsyncHookHandler {
   const clock = deps.clock ?? (() => new Date());
 
@@ -53,6 +54,12 @@ export function createAdminSessionGuard(deps: {
     const write=!["GET","HEAD","OPTIONS"].includes(request.method);
     if(!write||apiPath==="/api/session")return;
     if(role==="manager")return;
+    const messageRoute=/^\/api\/conversations\/([^/]+)\/(?:messages|handoff|resume)$/.exec(apiPath);
+    if(messageRoute){
+      const phone=decodeURIComponent(messageRoute[1]!);
+      const assigned=deps.assignmentOwner?.(phone);
+      if(assigned&&assigned!==userId)return reply.code(403).send({error:"Atendimento atribuído a outro operador"});
+    }
     // Agentes podem operar o CRM, mas não administrar contas, campanhas, regras
     // de automação ou realizar prospecção em massa.
     const allowedCrm=/^\/api\/crm\/(?:companies|opportunities|customers\/convert|quotes|activities)(?:\/.*)?$/.test(apiPath);
