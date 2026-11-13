@@ -90,6 +90,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
+/** Para componentes reaproveitados isoladamente por testes e painéis embutidos. */
+export function useOptionalSession(): SessionContextValue | null {
+  return useContext(SessionContext);
+}
+
 export function useSession(): SessionContextValue {
   const context = useContext(SessionContext);
   if (!context) {
