@@ -174,11 +174,11 @@ export class EngagementStore {
     this.db.exec("BEGIN");
     try {
       this.db.prepare("UPDATE crm_opportunities SET pipeline_id=?,pipeline_stage_id=?,stage=?,won_at=?,updated_at=? WHERE id=?")
-        .run(pipelineId,stageId,toStage,toStage==="won"?(old.stage==="won"&&old.won_at?old.won_at:at):null,at,id);
+        .run(pipelineId,stageId,toStage,toStage==="won"?(old.stage==="won"&&old.won_at?String(old.won_at):at):null,at,id);
       if(old.stage!==toStage)this.db.prepare("INSERT INTO crm_stage_events(id,opportunity_id,from_stage,to_stage,occurred_at) VALUES(?,?,?,?,?)")
-        .run(randomUUID(),id,old.stage,toStage,at);
+        .run(randomUUID(),id,String(old.stage),toStage,at);
       this.db.prepare("INSERT INTO crm_pipeline_events(id,opportunity_id,from_pipeline_id,from_stage_id,to_pipeline_id,to_stage_id,occurred_at) VALUES(?,?,?,?,?,?,?)")
-        .run(randomUUID(),id,old.pipeline_id,old.pipeline_stage_id,pipelineId,stageId,at);
+        .run(randomUUID(),id,old.pipeline_id==null?null:String(old.pipeline_id),old.pipeline_stage_id==null?null:String(old.pipeline_stage_id),pipelineId,stageId,at);
       this.db.exec("COMMIT");
     }catch(e){this.db.exec("ROLLBACK");throw e;}
     return {id,pipelineId,pipelineStageId:stageId,stage:toStage};
