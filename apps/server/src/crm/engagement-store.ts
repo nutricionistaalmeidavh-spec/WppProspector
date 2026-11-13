@@ -169,7 +169,7 @@ export class EngagementStore {
     const toStage=s(stage,"base_stage");
     if(!isStage(toStage))throw new Error("Etapa canônica inválida.");
     if(old.pipeline_id===pipelineId && old.pipeline_stage_id===stageId)
-      return {id,pipelineId,pipelineStageId:stageId,stage:toStage};
+      return {id,pipelineId,pipelineStageId:stageId,stage:toStage,stageChanged:false};
     const at=this.now();
     this.db.exec("BEGIN");
     try {
@@ -181,7 +181,7 @@ export class EngagementStore {
         .run(randomUUID(),id,old.pipeline_id==null?null:String(old.pipeline_id),old.pipeline_stage_id==null?null:String(old.pipeline_stage_id),pipelineId,stageId,at);
       this.db.exec("COMMIT");
     }catch(e){this.db.exec("ROLLBACK");throw e;}
-    return {id,pipelineId,pipelineStageId:stageId,stage:toStage};
+    return {id,pipelineId,pipelineStageId:stageId,stage:toStage,stageChanged:old.stage!==toStage};
   }
   listPipelineOpportunities(pipelineId:string) {
     return this.db.prepare("SELECT id,pipeline_id AS pipelineId,pipeline_stage_id AS pipelineStageId,stage FROM crm_opportunities WHERE pipeline_id=? ORDER BY updated_at DESC,id LIMIT 1000")
