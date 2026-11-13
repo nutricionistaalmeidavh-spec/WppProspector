@@ -23,6 +23,7 @@ import { CampaignDetailRoute, CampaignsRoute, ImportsRoute } from "@/features/ca
 import { InboxRoute } from "@/features/inbox/InboxRoute";
 import { ContactsRoute } from "@/features/contacts/ContactsRoute";
 import { CampaignAnalyticsRoute, ConversionsRoute, FunnelRoute } from "@/features/analytics/AnalyticsRoutes";
+import { TeamMetricsRoute } from "@/features/analytics/TeamMetricsRoute";
 import { SettingsRoute } from "@/features/settings/SettingsRoute";
 import { WhatsAppRoute } from "@/features/settings/WhatsAppRoute";
 import { BusinessAiSettingsRoute } from "@/features/settings/BusinessAiSettingsRoute";
@@ -88,6 +89,7 @@ export const appRoutes: RouteObject[] = [
       { path: "analytics/campaigns", element: <CampaignAnalyticsRoute /> },
       { path: "analytics/conversions", element: <ConversionsRoute /> },
       { path: "analytics/costs", element: <ConsumptionRoute /> },
+      { path: "analytics/team", element: <TeamMetricsRoute /> },
 
       { path: "automations", element: <AutomationRoute /> },
       { path: "settings", element: <SettingsRoute /> },
