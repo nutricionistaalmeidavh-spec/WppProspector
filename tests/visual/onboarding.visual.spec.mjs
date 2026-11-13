@@ -141,7 +141,16 @@ test("mobile e tablet: navegação, Kanban e layout sem overflow global", async 
     await capture(page, info, "18-mobile-menu");
     await menu.getByRole("link", { name: "Pipeline" }).click();
     await expect(menu).toHaveCount(0);
-    await expect(page.getByText(opportunity, { exact: true }).first()).toBeVisible();
+    try { await expect(page.getByText(opportunity, { exact: true }).first()).toBeVisible({timeout:6000}); }
+    catch (error) {
+      const placements=await page.request.get("/admin/api/engagement/pipelines/default/opportunities");
+      const current=await page.request.get("/admin/api/crm/opportunities");
+      console.log("QA mobile pipeline:",JSON.stringify({url:page.url(),body:(await page.locator("body").innerText()).slice(0,2200),
+        placementsStatus:placements.status(),placements:(await placements.text()).slice(0,600),
+        opportunitiesStatus:current.status(),opportunities:(await current.text()).slice(0,600)}));
+      await capture(page,info,"19-mobile-kanban-falha-diagnostico");
+      throw error;
+    }
     await capture(page, info, "19-mobile-kanban");
     await verifyLayout(page);
 
