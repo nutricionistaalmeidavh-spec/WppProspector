@@ -7,6 +7,7 @@ files:
   - boot-support.cjs
   - preload.cjs
   - license.cjs
+  - central-license.cjs
   - public-key.pem
   - activation.html
   - activation.js
