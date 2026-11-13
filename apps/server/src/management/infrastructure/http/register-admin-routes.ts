@@ -85,7 +85,12 @@ export const registerAdminRoutes: FastifyPluginAsync<AdminRoutesDeps> = async (a
   const team=new TeamStore(deps.db,clock);
   app.addHook(
     "preHandler",
-    createAdminSessionGuard({ sessionSecret: deps.config.sessionSecret, clock,team }),
+    createAdminSessionGuard({ sessionSecret: deps.config.sessionSecret, clock,team,
+      assignmentOwner:(phone)=>{
+        const row=deps.db.prepare("SELECT owner_user_id AS id FROM crm_conversation_assignments WHERE phone=?").get(phone) as {id:string|null}|undefined;
+        return row?.id??null;
+      },
+    }),
   );
 
   const queries = new ConversationIndexQueries(deps.db);
