@@ -62,7 +62,7 @@ export function OpportunityCreateForm({pipelineId="default"}:{pipelineId?:string
   async function save(e:FormEvent) {
     e.preventDefault();setBusy(true);setError("");setSuccess("");
     try {
-      const firstStage=pipelines.data?.items.find(p=>p.id===pipelineId)?.stages[0]?.id;
+      const firstStage=pipelines.data?.items.find(p=>p.id===pipelineId)?.stages[0]?.id ?? (pipelineId==="default"?"default-new":undefined);
       if(!firstStage)throw new Error("Etapas do funil não carregadas. Atualize e tente novamente.");
       await apiFetch("/crm/opportunities",{method:"POST",body:{
         title,companyId,leadPhone,ownerUserId:ownerUserId||null,estimatedValue:Number(amount),campaignId:campaignId||null,
