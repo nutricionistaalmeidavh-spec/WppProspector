@@ -16,7 +16,7 @@ export interface OpportunityInput {
 export interface Company extends Required<CompanyInput> {
   id:string; leadCount:number; opportunityCount:number; pipelineValue:number;
 }
-export interface Opportunity extends Required<Omit<OpportunityInput,"stage"|"estimatedValue"|"campaignId"|"ownerUserId">> {
+export interface Opportunity extends Required<Omit<OpportunityInput,"stage"|"estimatedValue"|"campaignId"|"ownerUserId"|"pipelineId"|"pipelineStageId">> {
   id:string; stage:Stage; estimatedValue:number; companyName:string; leadName:string;
   createdAt:string; campaignId?:string; campaignName?:string;
   ownerUserId?:string; pipelineId?:string; pipelineStageId?:string;
