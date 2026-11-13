@@ -148,6 +148,7 @@ async function startCRM() {
   booting = true;
   try {
     const central = await centralAccess();
+    if(central.reason==='revoked'){showActivation('Esta licença foi suspensa ou o computador desativado na Central. Solicite uma nova ativação.');return;}
     const status = central.ok ? central : ensureLicense();
     if (!status.ok) { showActivation(central.reason==='revoked' ? 'Licença suspensa ou dispositivo desativado. Solicite nova ativação à ArtiSys.' : status.reason === 'expired' ? 'Sua licença de avaliação expirou. Informe um código comercial.' : 'Informe seu e-mail e código de ativação fornecidos pela ArtiSys.'); return; }
     if (!windowRef || windowRef.isDestroyed()) {
