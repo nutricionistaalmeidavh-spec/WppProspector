@@ -128,8 +128,10 @@ export const registerEngagementRoutes:FastifyPluginAsync<{
     if(!id.success||!body.success)return reply.code(422).send({error:"Movimento inválido"});
     try {
       const result=deps.store.moveOpportunity(id.data,body.data.pipelineId,body.data.stageId);
-      const row=deps.store.listPipelineOpportunities(result.pipelineId).find(r=>r.id===result.id);
-      if(row)deps.onStageMoved?.(row.id,row.stage,"");
+      if(result.stageChanged){
+        try { deps.onStageMoved?.(result.id,result.stage,""); }
+        catch(error){app.log.error({error},"Falha de regra após mudança canônica de etapa");}
+      }
       return result;
     }catch(error){return bad(reply,error);}
   });
