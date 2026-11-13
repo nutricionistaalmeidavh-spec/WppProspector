@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
+import { RuleFlowDesigner } from "./RuleFlowDesigner";
+import { buildSectorRules } from "@/features/onboarding/sector-rule-templates";
 import { useSession } from "@/auth/session";
 import { Clock3, MessageSquareText, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { apiFetch } from "@/api/client";
@@ -113,6 +115,17 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
     }catch(e){setError(e instanceof Error?e.message:"Erro na simulação");}
     finally{setBusy(false);}
   }
+  async function applySectorTemplates(){
+    if(!embedded)throw new Error("Modelos setoriais exigem a Central de Regras.");
+    const current=await apiFetch<{draft:{profile:{name:string;segment:string;openingHours:string;paymentMethods:string}}}>("/business/studio");
+    const sector=current.draft.profile;
+    if(!sector.segment.trim())throw new Error("Defina antes o segmento da empresa na configuração.");
+    const candidates=buildSectorRules(sector).filter(rule=>!rules.some(existing=>existing.name===rule.name))
+      .map(rule=>({...rule,enabled:false}));
+    if(candidates.length===0)throw new Error("Os modelos deste setor já estão no rascunho.");
+    await apiFetch("/business/studio/rules-draft",{method:"PUT",body:{items:[...rules,...candidates]}});
+    setMessage("Modelos adicionados desativados. Revise, simule e ative antes de publicar.");
+  }
   function updateCondition(index:number,patch:Partial<Condition>){
     setDraft(current=>({...current,conditions:{match:current.conditions?.match??"all",
       conditions:(current.conditions?.conditions??[]).map((item,i)=>i===index?{...item,...patch}:item)}}));
@@ -139,10 +152,20 @@ export function AutomationRoute({embedded=false}:{embedded?:boolean}={}){
     {error?<p role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive">{error}</p>:null}
     {message?<p role="status" className="text-sm text-muted-foreground">{message}</p>:null}
     {loading?<p className="text-sm text-muted-foreground">Carregando automações…</p>:null}
+    {embedded?<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card p-3">
+      <div><p className="text-sm font-medium">Modelos de atendimento por segmento</p><p className="text-xs text-muted-foreground">Importe sugestões como rascunhos desativados. Nenhuma resposta será enviada ou publicada automaticamente.</p></div>
+      <Button size="sm" variant="outline" disabled={busy||loading} onClick={()=>void perform(applySectorTemplates)}>Preparar modelos do meu segmento</Button>
+    </div>:null}
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><MessageSquareText className="h-4 w-4" />{editId?"Editar regra":"Nova regra"}</CardTitle></CardHeader>
         <CardContent className="space-y-4">
+          <RuleFlowDesigner value={{eventType:draft.eventType??"message.received",action:draft.action,trigger:draft.trigger,
+            conditionCount:draft.conditions?.conditions.length??0,combine:draft.conditions?.match??null}}
+            onEventChange={value=>setDraft({...draft,eventType:value,
+              action:(draft.action==="menu"&&value!=="message.received")||(draft.action==="crm_set_stage"&&value!=="crm.opportunity_updated")?"reply":draft.action})}
+            onActionChange={value=>setDraft({...draft,action:value,
+              ...(value==="crm_set_stage"?{targetStage:"proposal",conditions:draft.conditions??{match:"all",conditions:[{field:"crm.stage",op:"equals",value:"qualified"}]}}:{})})}/>
           <div className="space-y-1.5"><Label htmlFor="r-name">Nome interno</Label><Input id="r-name" value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})} placeholder="Atendimento inicial" /></div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5"><Label htmlFor="r-match">Condição</Label><select id="r-match" className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={draft.match} onChange={e=>setDraft({...draft,match:e.target.value as Match})}>{(Object.keys(matchNames) as Match[]).map(k=><option key={k} value={k}>{matchNames[k]}</option>)}</select></div>
