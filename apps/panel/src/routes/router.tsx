@@ -15,7 +15,8 @@ import { ConversationDetailRoute } from "@/features/conversations/ConversationDe
 import { ConsumptionRoute } from "@/features/consumption/ConsumptionRoute";
 import { LeadsRoute } from "@/features/leads/LeadsRoute";
 import { OverviewRoute } from "@/features/overview/OverviewRoute";
-import { CompaniesRoute, OpportunityDetailRoute, OpportunitiesRoute, PipelineRoute } from "@/features/crm/CrmRoutes";
+import { CompaniesRoute, OpportunityDetailRoute, OpportunitiesRoute } from "@/features/crm/CrmRoutes";
+import { PipelineWorkspaceRoute } from "@/features/crm/PipelineWorkspaceRoute";
 import { CommercialRoute } from "@/features/crm/CommercialRoute";
 import { TeamRoute } from "@/features/crm/TeamRoute";
 import { CampaignDetailRoute, CampaignsRoute, ImportsRoute } from "@/features/campaigns/CampaignRoutes";
@@ -65,7 +66,7 @@ export const appRoutes: RouteObject[] = [
       { path: "onboarding/first-operation", element: <FirstOperationRoute /> },
       { path: "settings/onboarding", element: <OnboardingAnalyticsRoute /> },
 
-      { path: "crm/pipeline", element: <PipelineRoute /> },
+      { path: "crm/pipeline", element: <PipelineWorkspaceRoute /> },
       { path: "crm/opportunities", element: <OpportunitiesRoute /> },
       { path: "crm/opportunities/:id", element: <OpportunityDetailRoute /> },
       { path: "crm/leads", element: <LeadsRoute /> },
