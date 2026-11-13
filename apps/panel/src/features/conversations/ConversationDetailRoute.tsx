@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import type { ConversationDetail } from "@/api/contracts";
 import { ConversationActions } from "@/features/actions/ConversationActions";
+import { ConversationOpsPanel } from "@/features/inbox/ConversationOpsPanel";
 import { ConversationCrmPanel } from "./ConversationCrmPanel";
 import { formatDateTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
@@ -92,24 +93,24 @@ export function ConversationDetailPanel({
         <Field label="Última atividade" value={formatDateTime(detail.lastActivityAt)} />
       </dl>
 
-      <ConversationActions leadPhone={detail.leadPhone} state={detail.state} />
+      <ConversationOpsPanel phone={detail.leadPhone} />
       <ConversationCrmPanel leadPhone={detail.leadPhone} />
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">Linha do tempo</h2>
-        <ol className="space-y-2">
+        <ol className="max-h-[480px] space-y-2 overflow-y-auto rounded-xl border bg-muted/10 p-3" aria-label="Mensagens da conversa">
           {detail.turns.map((turn, index) => (
             <li
               key={`${turn.timestamp}-${index}`}
               className={
                 turn.direction === "inbound"
-                  ? "rounded-lg border bg-muted/40 p-3"
-                  : "rounded-lg border p-3"
+                  ? "mr-8 max-w-[85%] rounded-xl rounded-tl-sm border bg-card p-3"
+                  : "ml-auto max-w-[85%] rounded-xl rounded-tr-sm border bg-accent/35 p-3"
               }
             >
               <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="font-medium uppercase">
-                  {turn.direction === "inbound" ? "Lead" : "Bot"}
+                  {turn.direction === "inbound" ? "Cliente" : turn.origin === "operator" ? "Atendente" : "Automação"}
                 </span>
                 <span>{formatDateTime(turn.timestamp)}</span>
                 {turn.direction === "inbound" && turn.abandoned ? (
@@ -124,6 +125,7 @@ export function ConversationDetailPanel({
           ))}
         </ol>
       </section>
+      <ConversationActions leadPhone={detail.leadPhone} state={detail.state} />
     </div>
   );
 }
