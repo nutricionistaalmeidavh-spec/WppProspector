@@ -11,14 +11,15 @@ export interface OpportunityInput {
   owner?:string; nextAction?:string; nextActionAt?:string;
   campaignId?:string|null; source?:string; qualification?:string;
   probabilityPercent?:number; lossReason?:string; ownerUserId?:string|null;
+  pipelineId?:string; pipelineStageId?:string;
 }
 export interface Company extends Required<CompanyInput> {
   id:string; leadCount:number; opportunityCount:number; pipelineValue:number;
 }
-export interface Opportunity extends Required<Omit<OpportunityInput,"stage"|"estimatedValue"|"campaignId"|"ownerUserId">> {
+export interface Opportunity extends Required<Omit<OpportunityInput,"stage"|"estimatedValue"|"campaignId"|"ownerUserId"|"pipelineId"|"pipelineStageId">> {
   id:string; stage:Stage; estimatedValue:number; companyName:string; leadName:string;
   createdAt:string; campaignId?:string; campaignName?:string;
-  ownerUserId?:string;
+  ownerUserId?:string; pipelineId?:string; pipelineStageId?:string;
 }
 export interface Campaign {
   id:string; name:string; status:CampaignStatus; audience:number; sent:number; replied:number;
@@ -152,6 +153,7 @@ export class CrmStore {
       ...(r.campaign_id?{campaignId:str(r,"campaign_id"),campaignName:str(r,"campaign_name")}:{}),
       qualification:str(r,"qualification"),source:str(r,"source"),createdAt:str(r,"created_at"),
       probabilityPercent:Number(r.probability_percent??0),lossReason:str(r,"loss_reason"),
+      pipelineId:str(r,"pipeline_id")||"default",pipelineStageId:str(r,"pipeline_stage_id")||"default-"+str(r,"stage"),
     };
   }
   createOpportunity(input:OpportunityInput):Opportunity{
@@ -160,7 +162,12 @@ export class CrmStore {
     if(input.campaignId&&!this.exists("crm_campaigns","id",input.campaignId))throw new Error("Campanha não encontrada.");
     if(input.campaignId&&!this.hasCampaignMember(input.campaignId,input.leadPhone))
       throw new Error("Lead não pertence à campanha.");
-    const id=randomUUID(),at=this.now(),stage=input.stage??"new";
+    const id=randomUUID(),at=this.now();
+    const pipelineId=input.pipelineId??"default";
+    const pipelineStageId=input.pipelineStageId??"default-"+(input.stage??"new");
+    const linkedStage=this.db.prepare("SELECT base_stage FROM crm_pipeline_stages WHERE id=? AND pipeline_id=?").get(pipelineStageId,pipelineId) as {base_stage:Stage}|undefined;
+    if(!linkedStage)throw new Error("Etapa não pertence ao funil escolhido.");
+    const stage=linkedStage.base_stage;
     this.db.exec("BEGIN");
     try{
       this.db.prepare(`INSERT INTO crm_opportunities
@@ -169,6 +176,7 @@ export class CrmStore {
         .run(id,input.title.trim(),input.companyId,input.leadPhone,stage,Math.round((input.estimatedValue??0)*100),
           input.owner??"",input.nextAction??"",input.nextActionAt??"",input.campaignId??null,input.source??"",
           input.qualification??"",at,at,stage==="won"?at:null);
+      this.db.prepare("UPDATE crm_opportunities SET pipeline_id=?,pipeline_stage_id=? WHERE id=?").run(pipelineId,pipelineStageId,id);
       this.db.prepare("UPDATE crm_opportunities SET probability_percent=?,loss_reason=?,owner_user_id=? WHERE id=?")
         .run(input.probabilityPercent??0,input.lossReason??"",input.ownerUserId??null,id);
       this.db.prepare("UPDATE leads SET company_id=?,updated_at=? WHERE phone=? AND company_id IS NULL")
@@ -204,8 +212,16 @@ export class CrmStore {
       this.db.prepare("UPDATE crm_opportunities SET probability_percent=?,loss_reason=?,owner_user_id=? WHERE id=?")
         .run(patch.probabilityPercent??Number(old.probability_percent??0),patch.lossReason??str(old,"loss_reason"),
           patch.ownerUserId===undefined?(old.owner_user_id==null?null:String(old.owner_user_id)):patch.ownerUserId,id);
-      if(stage!==old.stage)this.db.prepare("INSERT INTO crm_stage_events(id,opportunity_id,from_stage,to_stage,occurred_at) VALUES(?,?,?,?,?)")
+      if(stage!==old.stage){
+        const pipelineId=str(old,"pipeline_id")||"default";
+        const nextStage=this.db.prepare("SELECT id FROM crm_pipeline_stages WHERE pipeline_id=? AND base_stage=? ORDER BY position LIMIT 1").get(pipelineId,stage) as {id:string}|undefined;
+        if(!nextStage)throw new Error("O funil não possui a etapa comercial correspondente.");
+        this.db.prepare("UPDATE crm_opportunities SET pipeline_stage_id=? WHERE id=?").run(nextStage.id,id);
+        this.db.prepare("INSERT INTO crm_pipeline_events(id,opportunity_id,from_pipeline_id,from_stage_id,to_pipeline_id,to_stage_id,occurred_at) VALUES(?,?,?,?,?,?,?)")
+          .run(randomUUID(),id,pipelineId,old.pipeline_stage_id==null?null:String(old.pipeline_stage_id),pipelineId,nextStage.id,at);
+        this.db.prepare("INSERT INTO crm_stage_events(id,opportunity_id,from_stage,to_stage,occurred_at) VALUES(?,?,?,?,?)")
         .run(randomUUID(),id,old.stage as string,stage,at);
+      }
       this.db.exec("COMMIT");
     }catch(e){this.db.exec("ROLLBACK");throw e;}
     return this.getOpportunity(id);
@@ -371,8 +387,13 @@ export class CrmStore {
       const add=this.db.prepare("INSERT INTO crm_quote_items(id,quote_id,description,quantity,unit_cents,line_cents) VALUES(?,?,?,?,?,?)");
       for(const item of items)add.run(randomUUID(),id,item.description,item.quantity,item.unitCents,item.lineCents);
       if(["new","contacted","replied","qualified","meeting"].includes(opp.stage)){
-        this.db.prepare("UPDATE crm_opportunities SET stage='proposal',updated_at=? WHERE id=?")
-          .run(at,opp.id);
+        const pipelineId=opp.pipelineId??"default";
+        const proposal=this.db.prepare("SELECT id FROM crm_pipeline_stages WHERE pipeline_id=? AND base_stage='proposal' ORDER BY position LIMIT 1").get(pipelineId) as {id:string}|undefined;
+        if(!proposal)throw new Error("Etapa de proposta ausente no funil.");
+        this.db.prepare("UPDATE crm_opportunities SET stage='proposal',pipeline_stage_id=?,updated_at=? WHERE id=?")
+          .run(proposal.id,at,opp.id);
+        this.db.prepare("INSERT INTO crm_pipeline_events(id,opportunity_id,from_pipeline_id,from_stage_id,to_pipeline_id,to_stage_id,occurred_at) VALUES(?,?,?,?,?,?,?)")
+          .run(randomUUID(),opp.id,pipelineId,opp.pipelineStageId??"default-"+opp.stage,pipelineId,proposal.id,at);
         this.db.prepare("INSERT INTO crm_stage_events(id,opportunity_id,from_stage,to_stage,occurred_at) VALUES(?,?,?,?,?)")
           .run(randomUUID(),opp.id,opp.stage,"proposal",at);
       }

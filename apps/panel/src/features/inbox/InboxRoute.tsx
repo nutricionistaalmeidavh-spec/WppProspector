@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/api/client";
 import { MessageCircleMore, Search, UserRoundCheck } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
@@ -12,10 +14,20 @@ import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { ConversationDetailPanel } from "@/features/conversations/ConversationDetailRoute";
 import { useConversationList, type ConversationFilters } from "@/features/conversations/useConversationList";
 
+type Assignment={phone:string;ownerId:string|null;ownerName:string|null;department:string};
+type Operator={id:string;username:string};
+
 export function InboxRoute({ awaitingHuman = false }: { awaitingHuman?: boolean }) {
   const navigate = useNavigate();
   const [phone, setPhone] = useState("");
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
+  const [ownerFilter,setOwnerFilter]=useState("all");
+  const [departmentFilter,setDepartmentFilter]=useState("all");
+  const [notificationStatus,setNotificationStatus]=useState<"off"|"on"|"blocked">("off");
+  const knownActivity=useRef<Map<string,string>>(new Map());
+  const initialized=useRef(false);
+  const assignments=useQuery({queryKey:["engagement","assignments"],queryFn:()=>apiFetch<{items:Assignment[]}>("/engagement/assignments"),refetchInterval:12000});
+  const operators=useQuery({queryKey:["crm","team"],queryFn:()=>apiFetch<{items:Operator[]}>("/crm/team")});
   const debouncedPhone = useDebouncedValue(phone, 300);
   const filters = useMemo<ConversationFilters>(() => ({
     state: awaitingHuman ? "awaitingHuman" : undefined,
@@ -23,6 +35,33 @@ export function InboxRoute({ awaitingHuman = false }: { awaitingHuman?: boolean 
   }), [awaitingHuman, debouncedPhone]);
   const query = useConversationList(filters);
   const items = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
+  const assignedByPhone=useMemo(()=>new Map((assignments.data?.items??[]).map(a=>[a.phone,a])),[assignments.data]);
+  const visibleItems=useMemo(()=>items.filter(item=>{
+    const a=assignedByPhone.get(item.leadPhone);
+    if(ownerFilter==="unassigned"&&a?.ownerId)return false;
+    if(ownerFilter!=="all"&&ownerFilter!=="unassigned"&&a?.ownerId!==ownerFilter)return false;
+    if(departmentFilter!=="all"&&(a?.department??"Geral")!==departmentFilter)return false;
+    return true;
+  }),[items,assignedByPhone,ownerFilter,departmentFilter]);
+  const departments=useMemo(()=>[...new Set((assignments.data?.items??[]).map(x=>x.department).concat("Geral"))].sort(),[assignments.data]);
+  useEffect(()=>{
+    const latest=new Map(items.map(item=>[item.leadPhone,item.lastActivityAt??""]));
+    if(initialized.current&&notificationStatus==="on"&&typeof Notification!=="undefined"&&Notification.permission==="granted"){
+      for(const item of items){
+        const previous=knownActivity.current.get(item.leadPhone);
+        if(item.hasPendingInbound&&previous!==undefined&&previous!==(item.lastActivityAt??"")){
+          new Notification("Nova mensagem no WPP CRM",{body:"Contato "+item.leadPhone+" requer atenção."});
+        }
+      }
+    }
+    knownActivity.current=latest;
+    initialized.current=true;
+  },[items,notificationStatus]);
+  async function enableNotifications(){
+    if(typeof Notification==="undefined"){setNotificationStatus("blocked");return;}
+    try{setNotificationStatus(await Notification.requestPermission()==="granted"?"on":"blocked");}
+    catch{setNotificationStatus("blocked");}
+  }
 
   function openConversation(leadPhone: string) {
     const desktop =
@@ -46,6 +85,21 @@ export function InboxRoute({ awaitingHuman = false }: { awaitingHuman?: boolean 
         description={awaitingHuman ? "Conversas que pedem intervenção do operador." : "Priorize respostas e abra o contexto completo de cada lead."}
       />
 
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
+        <label className="text-xs">Responsável
+          <select aria-label="Filtrar responsável" value={ownerFilter} onChange={e=>setOwnerFilter(e.target.value)} className="ml-2 h-9 rounded-md border bg-background px-2">
+            <option value="all">Todos</option><option value="unassigned">Não atribuídos</option>
+            {(operators.data?.items??[]).map(op=><option key={op.id} value={op.id}>{op.username}</option>)}
+          </select>
+        </label>
+        <label className="text-xs">Setor
+          <select aria-label="Filtrar setor" value={departmentFilter} onChange={e=>setDepartmentFilter(e.target.value)} className="ml-2 h-9 rounded-md border bg-background px-2">
+            <option value="all">Todos</option>{departments.map(dept=><option key={dept} value={dept}>{dept}</option>)}
+          </select>
+        </label>
+        <span className="text-xs text-muted-foreground">{visibleItems.length} conversas nesta lista</span>
+        <Button variant="outline" size="sm" disabled={notificationStatus==="on"} onClick={()=>void enableNotifications()}>{notificationStatus==="on"?"Alertas ativados":notificationStatus==="blocked"?"Alertas indisponíveis":"Ativar alertas"}</Button>
+      </div>
       <div className="grid min-h-[620px] overflow-hidden rounded-xl border bg-card shadow-sm lg:grid-cols-[380px_1fr]">
         <section className="border-b lg:border-b-0 lg:border-r">
           <div className="border-b p-3">
@@ -58,8 +112,8 @@ export function InboxRoute({ awaitingHuman = false }: { awaitingHuman?: boolean 
           <div className="app-scrollbar max-h-[560px] overflow-y-auto">
             {query.isError ? <div className="p-3"><ErrorState onRetry={() => query.refetch()} description="Falha ao carregar a Inbox." /></div> : null}
             {query.isLoading ? <div className="space-y-2 p-3">{Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-20" />)}</div> : null}
-            {!query.isLoading && !query.isError && items.length === 0 ? <div className="p-3"><EmptyState title="Nada por aqui" description={awaitingHuman ? "Nenhuma conversa está aguardando humano." : "Nenhuma conversa corresponde aos filtros."} /></div> : null}
-            {items.map((item) => (
+            {!query.isLoading && !query.isError && visibleItems.length === 0 ? <div className="p-3"><EmptyState title="Nada por aqui" description={awaitingHuman ? "Nenhuma conversa está aguardando humano." : "Nenhuma conversa corresponde aos filtros."} /></div> : null}
+            {visibleItems.map((item) => (
               <button
                 key={item.leadPhone}
                 className={`flex w-full items-start gap-3 border-b px-4 py-3.5 text-left transition-colors last:border-b-0 hover:bg-muted/45 ${selectedPhone === item.leadPhone ? "bg-muted/45" : ""}`}
@@ -79,7 +133,8 @@ export function InboxRoute({ awaitingHuman = false }: { awaitingHuman?: boolean 
                     </StatusPill>
                     {item.hasPendingInbound ? <StatusPill tone="info">mensagem recebida</StatusPill> : null}
                   </div>
-                  <p className="mt-1.5 truncate text-xs text-muted-foreground">{item.leadIntent} · {item.leadQualification ?? "sem qualificação"}</p>
+                  <p className="mt-1.5 truncate text-xs text-muted-foreground">{assignedByPhone.get(item.leadPhone)?.ownerName??"Sem responsável"} · {assignedByPhone.get(item.leadPhone)?.department??"Geral"}</p>
+                  <p className="truncate text-xs text-muted-foreground">{item.leadIntent} · {item.leadQualification ?? "sem qualificação"}</p>
                 </div>
               </button>
             ))}

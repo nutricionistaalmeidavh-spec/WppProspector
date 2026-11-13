@@ -48,11 +48,12 @@ export function CompanyEditor({company}:{company?:Company}) {
   </div>;
 }
 
-export function OpportunityCreateForm() {
+export function OpportunityCreateForm({pipelineId="default"}:{pipelineId?:string}={}) {
   const client=useQueryClient();
   const companies=useQuery({queryKey:["crm","companies"],queryFn:()=>apiFetch<{items:Company[]}>("/crm/companies")});
   const campaigns=useQuery({queryKey:["crm","campaigns"],queryFn:()=>apiFetch<{items:CampaignSummary[]}>("/crm/campaigns")});
   const operators=useQuery({queryKey:["crm","team"],queryFn:()=>apiFetch<{items:Array<{id:string;username:string}>}>("/crm/team")});
+  const pipelines=useQuery({queryKey:["engagement","pipelines"],queryFn:()=>apiFetch<{items:Array<{id:string;stages:Array<{id:string}>}>}>("/engagement/pipelines")});
   const [open,setOpen]=useState(false);
   const [title,setTitle]=useState(""),[companyId,setCompanyId]=useState("");
   const [leadPhone,setLeadPhone]=useState(""),[ownerUserId,setOwnerUserId]=useState("");
@@ -61,8 +62,11 @@ export function OpportunityCreateForm() {
   async function save(e:FormEvent) {
     e.preventDefault();setBusy(true);setError("");setSuccess("");
     try {
+      const firstStage=pipelines.data?.items.find(p=>p.id===pipelineId)?.stages[0]?.id ?? (pipelineId==="default"?"default-new":undefined);
+      if(!firstStage)throw new Error("Etapas do funil não carregadas. Atualize e tente novamente.");
       await apiFetch("/crm/opportunities",{method:"POST",body:{
         title,companyId,leadPhone,ownerUserId:ownerUserId||null,estimatedValue:Number(amount),campaignId:campaignId||null,
+        pipelineId,pipelineStageId:firstStage,
       }});
       await client.invalidateQueries({queryKey:["crm"]});
       setSuccess("Oportunidade cadastrada.");setOpen(false);setTitle("");setLeadPhone("");

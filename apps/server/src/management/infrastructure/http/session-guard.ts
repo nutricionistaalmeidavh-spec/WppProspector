@@ -24,6 +24,7 @@ export function createAdminSessionGuard(deps: {
   sessionSecret: string;
   clock?: () => Date;
   team?: TeamStore;
+  assignmentOwner?: (phone:string)=>string|null;
 }): preHandlerAsyncHookHandler {
   const clock = deps.clock ?? (() => new Date());
 
@@ -53,14 +54,27 @@ export function createAdminSessionGuard(deps: {
     const write=!["GET","HEAD","OPTIONS"].includes(request.method);
     if(!write||apiPath==="/api/session")return;
     if(role==="manager")return;
+    const messageRoute=/^\/api\/conversations\/([^/]+)\/(?:messages|handoff|resume)$/.exec(apiPath);
+    if(messageRoute){
+      const phone=decodeURIComponent(messageRoute[1]!);
+      const assigned=deps.assignmentOwner?.(phone);
+      if(assigned&&assigned!==userId)return reply.code(403).send({error:"Atendimento atribuído a outro operador"});
+    }
     // Agentes podem operar o CRM, mas não administrar contas, campanhas, regras
     // de automação ou realizar prospecção em massa.
     const allowedCrm=/^\/api\/crm\/(?:companies|opportunities|customers\/convert|quotes|activities)(?:\/.*)?$/.test(apiPath);
     const allowedLead=request.method==="POST"&&apiPath==="/api/leads";
     const allowedManualMessage=request.method==="POST"&&
       /^\/api\/conversations\/[^/]+\/messages$/.test(apiPath);
+    const allowedHandoff=request.method==="POST"&&
+      /^\/api\/conversations\/[^/]+\/(?:handoff|resume)$/.test(apiPath);
+    const allowedEngagement=(request.method==="PUT"&&
+      (/^\/api\/engagement\/assignments\/[^/]+$/.test(apiPath)||
+       /^\/api\/engagement\/contacts\/[^/]+\/labels$/.test(apiPath)||
+       apiPath==="/api/engagement/values")) ||
+      (request.method==="PATCH"&&/^\/api\/engagement\/opportunities\/[^/]+\/stage$/.test(apiPath));
     const allowedOnboarding = /^\/api\/onboarding\/(?:tour|first-operation(?:\/progress)?)$/.test(apiPath);
-    if(!allowedCrm&&!allowedLead&&!allowedManualMessage&&!allowedOnboarding)
+    if(!allowedCrm&&!allowedLead&&!allowedManualMessage&&!allowedOnboarding&&!allowedHandoff&&!allowedEngagement)
       return reply.code(403).send({error:"forbidden"});
   };
 }
