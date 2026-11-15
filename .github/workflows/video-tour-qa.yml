@@ -36,7 +36,8 @@ jobs:
           npm install --no-save --package-lock=false --ignore-scripts @playwright/test@1.65.0
           npx --no-install playwright install --with-deps chromium
       - name: Gravar tour, lead, oportunidade e Kanban
-        run: npx --no-install playwright test --config=playwright.visual.config.mjs --grep 'desktop: configuração'
+        run: |
+          npx --no-install playwright test --config=playwright.visual.config.mjs --grep 'desktop: configuração'
       - name: Exportar gravação MP4 com FFmpeg
         if: always()
         shell: bash
