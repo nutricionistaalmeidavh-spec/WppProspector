@@ -82,14 +82,14 @@ export function PipelineRoute() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 max-w-full space-y-6">
       <PageHeader eyebrow="CRM" title="Pipeline" description="Arraste oportunidades entre etapas ou use o seletor acessível de cada cartão." />
       {moveError?<p role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive">{moveError}</p>:null}
       {crm.supported && crm.source==="http"?<OpportunityCreateForm/>:null}
       <FeatureAvailability feature="Pipeline" supported={crm.supported}>
         {query.isLoading ? <Skeleton className="h-96" /> : (
-          <div className="app-scrollbar overflow-x-auto pb-2">
-            <div className="flex min-w-max gap-3">
+          <div className="app-scrollbar w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2">
+            <div className="flex w-max gap-3">
               {OPPORTUNITY_STAGES.map((stage) => {
                 const items = (query.data ?? []).filter((item) => item.stage === stage);
                 const total = items.reduce((sum, item) => sum + item.estimatedValue, 0);
