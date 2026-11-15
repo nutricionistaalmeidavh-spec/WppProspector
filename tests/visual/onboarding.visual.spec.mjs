@@ -105,6 +105,9 @@ test("desktop: configuração P0–P2, tour e primeira oportunidade em banco can
   await page.getByRole("link", { name: "Abrir oportunidade" }).click();
   await expect(page.getByRole("heading", { name: "Empresa Fictícia QA" })).toBeVisible();
   await capture(page, info, "11a-desktop-oportunidade");
+  await page.getByLabel("Etapa", { exact: true }).selectOption("contacted");
+  await page.getByLabel("Próxima ação").fill("Retornar após demonstração");
+  await page.getByLabel("Estimativa (R$)").fill("2500");
 
   await page.goto("/admin/crm/pipeline");
   await expect(page.getByText(opportunity, { exact: true }).first()).toBeVisible();
