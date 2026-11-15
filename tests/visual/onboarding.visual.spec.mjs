@@ -115,6 +115,11 @@ test("desktop: configuração P0–P2, tour e primeira oportunidade em banco can
   await page.goto("/admin/crm/pipeline");
   await expect(page.getByText(opportunity, { exact: true }).first()).toBeVisible();
   await capture(page, info, "12-desktop-kanban");
+  const stage = page.getByRole("combobox", { name: "Mover etapa de " + opportunity });
+  await expect(stage).toHaveValue("contacted");
+  await stage.selectOption("qualified");
+  await expect(stage).toHaveValue("qualified");
+  await capture(page, info, "12a-desktop-kanban-qualificado");
   await verifyLayout(page);
   await page.goto("/admin/crm/leads");
   await expect(page.getByText(contact, { exact: false }).first()).toBeVisible();
