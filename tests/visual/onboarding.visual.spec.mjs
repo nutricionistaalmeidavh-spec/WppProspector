@@ -108,6 +108,9 @@ test("desktop: configuração P0–P2, tour e primeira oportunidade em banco can
   await page.getByLabel("Etapa", { exact: true }).selectOption("contacted");
   await page.getByLabel("Próxima ação").fill("Retornar após demonstração");
   await page.getByLabel("Estimativa (R$)").fill("2500");
+  await page.getByRole("button", { name: "Atualizar oportunidade" }).click();
+  await expect(page.getByText("Oportunidade atualizada e etapa registrada no histórico.")).toBeVisible();
+  await capture(page, info, "11b-desktop-oportunidade-gerenciada");
 
   await page.goto("/admin/crm/pipeline");
   await expect(page.getByText(opportunity, { exact: true }).first()).toBeVisible();
