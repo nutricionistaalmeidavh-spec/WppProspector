@@ -21,10 +21,15 @@ async function capture(page, info, name) {
 async function verifyLayout(page) {
   const result = await page.evaluate(() => ({
     excess: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    overflowElements: [...document.querySelectorAll("body *")]
+      .filter(el => el.getBoundingClientRect().right > document.documentElement.clientWidth + 2)
+      .slice(0, 12).map(el => ({tag: el.tagName, className: String(el.className).slice(0, 140),
+        right: Math.round(el.getBoundingClientRect().right), overflowX: getComputedStyle(el).overflowX})),
     broken: [...document.images]
       .filter(img => img.complete && img.naturalWidth === 0)
       .map(img => img.getAttribute("src")),
   }));
+  if (result.excess > 2) console.error("Elementos excedendo viewport:", JSON.stringify(result.overflowElements));
   expect(result.excess, "A página não pode ter overflow horizontal global").toBeLessThanOrEqual(2);
   expect(result.broken, "Imagens quebradas não são permitidas").toEqual([]);
 }
