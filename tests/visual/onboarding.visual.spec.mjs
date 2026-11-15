@@ -128,6 +128,14 @@ test("desktop: configuração P0–P2, tour e primeira oportunidade em banco can
   await page.goto("/admin/crm/leads");
   await expect(page.getByText(contact, { exact: false }).first()).toBeVisible();
   await capture(page, info, "13-desktop-leads");
+  await page.getByLabel("Telefone", { exact: true }).fill(contact);
+  await expect(page.getByText(contact, { exact: true }).first()).toBeVisible();
+  await capture(page, info, "13a-desktop-busca-lead");
+  await page.goto("/admin/crm/opportunities");
+  await expect(page.getByText(opportunity, { exact: true }).first()).toBeVisible();
+  await capture(page, info, "13b-desktop-lista-oportunidades");
+  await page.goto("/admin/conversations/inbox");
+  await capture(page, info, "13c-desktop-inbox");
   await verifyLayout(page);
   await page.goto("/admin/settings/onboarding");
   await expect(page.getByRole("heading", { name: "Progresso do primeiro acesso" })).toBeVisible();
