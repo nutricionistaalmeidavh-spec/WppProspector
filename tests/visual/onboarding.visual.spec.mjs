@@ -15,6 +15,7 @@ async function capture(page, info, name) {
   const path = join(screenshots, name + ".png");
   await page.screenshot({ path, fullPage: true, animations: "disabled" });
   await info.attach(name, { path, contentType: "image/png" });
+  await page.waitForTimeout(500);
 }
 
 async function verifyLayout(page) {
