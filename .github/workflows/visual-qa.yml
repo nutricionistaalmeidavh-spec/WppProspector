@@ -33,6 +33,15 @@ jobs:
           npx --no-install playwright install --with-deps chromium
       - name: Jornadas visuais e screenshots reais
         run: npx --no-install playwright test --config=playwright.visual.config.mjs
+      - name: Converter gravações Playwright em MP4 (FFmpeg open source)
+        if: always()
+        shell: bash
+        run: |
+          if command -v ffmpeg >/dev/null 2>&1 && test -d visual-qa/test-results; then
+            find visual-qa/test-results -type f -name '*.webm' -print0 | while IFS= read -r -d '' recording; do
+              ffmpeg -hide_banner -loglevel error -y -i "$recording" -c:v libx264 -pix_fmt yuv420p -movflags +faststart "${recording%.webm}.mp4"
+            done
+          fi
       - name: Publicar screenshots, relatório HTML, JSON, vídeos e traces
         if: always()
         uses: actions/upload-artifact@v4

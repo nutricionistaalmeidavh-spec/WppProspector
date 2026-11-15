@@ -1,0 +1,61 @@
+name: CRM Tour Video QA
+
+# Grava o percurso completo do primeiro acesso sem substituir o QA responsivo.
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/workflows/video-tour-qa.yml
+      - tests/visual/**
+      - playwright.visual.config.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  tour-video:
+    name: Tour desktop gravado / Playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Compilar servidor e painel
+        run: |
+          npm ci
+          npm run build
+      - name: Instalar Playwright open source
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts @playwright/test@1.65.0
+          npx --no-install playwright install --with-deps chromium
+      - name: Gravar tour, lead, oportunidade e Kanban
+        run: |
+          npx --no-install playwright test --config=playwright.visual.config.mjs --grep 'desktop: configuração'
+      - name: Exportar gravação MP4 com FFmpeg
+        if: always()
+        shell: bash
+        run: |
+          if command -v ffmpeg >/dev/null 2>&1 && test -d visual-qa/test-results; then
+            find visual-qa/test-results -type f -name '*.webm' -print0 | while IFS= read -r -d '' recording; do
+              ffmpeg -hide_banner -loglevel error -y -i "$recording" -c:v libx264 -pix_fmt yuv420p -movflags +faststart "${recording%.webm}.mp4"
+            done
+          fi
+      - name: Entregar vídeo, screenshots, trace e relatório
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wppcrm-tour-video-playwright
+          path: |
+            visual-qa/screenshots/
+            visual-qa/playwright-report/
+            visual-qa/test-results/
+            visual-qa/report.json
+          retention-days: 14
+          if-no-files-found: warn

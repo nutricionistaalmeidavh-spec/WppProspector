@@ -15,15 +15,21 @@ async function capture(page, info, name) {
   const path = join(screenshots, name + ".png");
   await page.screenshot({ path, fullPage: true, animations: "disabled" });
   await info.attach(name, { path, contentType: "image/png" });
+  await page.waitForTimeout(500);
 }
 
 async function verifyLayout(page) {
   const result = await page.evaluate(() => ({
     excess: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    overflowElements: [...document.querySelectorAll("body *")]
+      .filter(el => el.getBoundingClientRect().right > document.documentElement.clientWidth + 2)
+      .slice(0, 12).map(el => ({tag: el.tagName, className: String(el.className).slice(0, 140),
+        right: Math.round(el.getBoundingClientRect().right), overflowX: getComputedStyle(el).overflowX})),
     broken: [...document.images]
       .filter(img => img.complete && img.naturalWidth === 0)
       .map(img => img.getAttribute("src")),
   }));
+  if (result.excess > 2) console.error("Elementos excedendo viewport:", JSON.stringify(result.overflowElements));
   expect(result.excess, "A página não pode ter overflow horizontal global").toBeLessThanOrEqual(2);
   expect(result.broken, "Imagens quebradas não são permitidas").toEqual([]);
 }
@@ -59,6 +65,13 @@ test("desktop: configuração P0–P2, tour e primeira oportunidade em banco can
 
   await expect(page.getByText("Conecte seu WhatsApp")).toBeVisible();
   await capture(page, info, "04-desktop-whatsapp-opcional");
+  await page.getByRole("radio", { name: /QR Code local/ }).check();
+  await capture(page, info, "04a-desktop-opcao-qr");
+  await page.getByRole("link", { name: "Abrir configurações do WhatsApp" }).click();
+  await expect(page.getByRole("heading", { name: "Conexões WhatsApp" })).toBeVisible();
+  await capture(page, info, "04b-desktop-conexoes-whatsapp");
+  await page.goto("/admin/onboarding");
+  await expect(page.getByText("Conecte seu WhatsApp")).toBeVisible();
   await page.getByRole("button", { name: "Continuar sem conectar" }).click();
   await expect(page.getByText("Automação e inteligência artificial")).toBeVisible();
   await expect(page.getByText("Atendimento manual — recomendado para começar")).toBeVisible();
@@ -70,11 +83,10 @@ test("desktop: configuração P0–P2, tour e primeira oportunidade em banco can
 
   const tour = page.getByRole("dialog");
   await expect(tour.getByRole("heading", { name: "Visão geral" })).toBeVisible();
-  await capture(page, info, "07-desktop-tour-inicio");
   for (let index = 0; index < 6; index++) {
-    if (index === 5) await capture(page, info, "08-desktop-tour-final");
+    await expect(tour.getByText(`Apresentação · ${index + 1} de 6`)).toBeVisible();
+    await capture(page, info, `07-desktop-tour-etapa-${index + 1}`);
     await tour.getByRole("button", { name: index === 5 ? "Concluir tour" : "Próximo" }).click();
-    if (index !== 5) await expect(tour).toBeVisible();
   }
   await expect(tour).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Visão geral", exact: true })).toBeVisible();
@@ -95,13 +107,40 @@ test("desktop: configuração P0–P2, tour e primeira oportunidade em banco can
   expect(stateResponse.ok()).toBeTruthy();
   expect((await stateResponse.json()).firstOperation.leadPhone).toBe(contact);
 
+  await page.getByRole("link", { name: "Abrir oportunidade" }).click();
+  await expect(page.getByRole("heading", { name: "Empresa Fictícia QA" })).toBeVisible();
+  await capture(page, info, "11a-desktop-oportunidade");
+  await page.getByLabel("Etapa", { exact: true }).selectOption("contacted");
+  await page.getByLabel("Próxima ação").fill("Retornar após demonstração");
+  await page.getByLabel("Estimativa (R$)").fill("2500");
+  await page.getByRole("button", { name: "Atualizar oportunidade" }).click();
+  await expect(page.getByText("Oportunidade atualizada e etapa registrada no histórico.")).toBeVisible();
+  await capture(page, info, "11b-desktop-oportunidade-gerenciada");
+
   await page.goto("/admin/crm/pipeline");
   await expect(page.getByText(opportunity, { exact: true }).first()).toBeVisible();
   await capture(page, info, "12-desktop-kanban");
+  const stage = page.getByRole("combobox", { name: "Mover etapa de " + opportunity });
+  await expect(stage).toHaveValue("contacted");
+  await stage.selectOption("qualified");
+  await expect(stage).toHaveValue("qualified");
+  await capture(page, info, "12a-desktop-kanban-qualificado");
+  await page.getByRole("button", { name: "Abrir conversa de Contato Fictício QA" }).click();
+  await expect(page.getByRole("dialog", { name: "Conversa do WhatsApp" })).toBeVisible();
+  await capture(page, info, "12b-desktop-conversa-contextual");
+  await page.getByRole("button", { name: "Fechar painel de conversa" }).click();
   await verifyLayout(page);
   await page.goto("/admin/crm/leads");
   await expect(page.getByText(contact, { exact: false }).first()).toBeVisible();
   await capture(page, info, "13-desktop-leads");
+  await page.getByLabel("Telefone", { exact: true }).fill(contact);
+  await expect(page.getByText(contact, { exact: true }).first()).toBeVisible();
+  await capture(page, info, "13a-desktop-busca-lead");
+  await page.goto("/admin/crm/opportunities");
+  await expect(page.getByText(opportunity, { exact: false }).first()).toBeVisible();
+  await capture(page, info, "13b-desktop-lista-oportunidades");
+  await page.goto("/admin/conversations/inbox");
+  await capture(page, info, "13c-desktop-inbox");
   await verifyLayout(page);
   await page.goto("/admin/settings/onboarding");
   await expect(page.getByRole("heading", { name: "Progresso do primeiro acesso" })).toBeVisible();
