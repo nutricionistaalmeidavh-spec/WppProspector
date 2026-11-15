@@ -71,11 +71,10 @@ test("desktop: configuração P0–P2, tour e primeira oportunidade em banco can
 
   const tour = page.getByRole("dialog");
   await expect(tour.getByRole("heading", { name: "Visão geral" })).toBeVisible();
-  await capture(page, info, "07-desktop-tour-inicio");
   for (let index = 0; index < 6; index++) {
-    if (index === 5) await capture(page, info, "08-desktop-tour-final");
+    await expect(tour.getByText(`Apresentação · ${index + 1} de 6`)).toBeVisible();
+    await capture(page, info, `07-desktop-tour-etapa-${index + 1}`);
     await tour.getByRole("button", { name: index === 5 ? "Concluir tour" : "Próximo" }).click();
-    if (index !== 5) await expect(tour).toBeVisible();
   }
   await expect(tour).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Visão geral", exact: true })).toBeVisible();
