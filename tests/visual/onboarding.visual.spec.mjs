@@ -60,6 +60,13 @@ test("desktop: configuração P0–P2, tour e primeira oportunidade em banco can
 
   await expect(page.getByText("Conecte seu WhatsApp")).toBeVisible();
   await capture(page, info, "04-desktop-whatsapp-opcional");
+  await page.getByRole("radio", { name: /QR Code local/ }).check();
+  await capture(page, info, "04a-desktop-opcao-qr");
+  await page.getByRole("link", { name: "Abrir configurações do WhatsApp" }).click();
+  await expect(page.getByRole("heading", { name: "Conexões WhatsApp" })).toBeVisible();
+  await capture(page, info, "04b-desktop-conexoes-whatsapp");
+  await page.goto("/admin/onboarding");
+  await expect(page.getByText("Conecte seu WhatsApp")).toBeVisible();
   await page.getByRole("button", { name: "Continuar sem conectar" }).click();
   await expect(page.getByText("Automação e inteligência artificial")).toBeVisible();
   await expect(page.getByText("Atendimento manual — recomendado para começar")).toBeVisible();
