@@ -161,7 +161,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen max-w-full overflow-x-hidden bg-background">
+    <div className="min-h-screen bg-background">
       <ContractMismatchBanner />
 
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r lg:block">{sidebar}</aside>
