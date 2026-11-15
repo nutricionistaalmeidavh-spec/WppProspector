@@ -82,7 +82,7 @@ export function PipelineRoute() {
   }
 
   return (
-    <div className="min-w-0 max-w-full space-y-6">
+    <div className="min-w-0 max-w-full overflow-x-clip space-y-6">
       <PageHeader eyebrow="CRM" title="Pipeline" description="Arraste oportunidades entre etapas ou use o seletor acessível de cada cartão." />
       {moveError?<p role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive">{moveError}</p>:null}
       {crm.supported && crm.source==="http"?<OpportunityCreateForm/>:null}
